@@ -8,8 +8,8 @@ install/
 log/
 
 # Python env
-.venv/
-venv/
+.nicoenv/
+nicoenv/
 __pycache__/
 *.pyc
 
