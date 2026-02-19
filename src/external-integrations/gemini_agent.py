@@ -145,10 +145,10 @@ class GeminiAgent:
         
         if system_instruction is None:
             system_instruction = (
-                "Eres un asistente personal. Tu respuesta será convertida a voz (text-to-speech), "
-                "por lo que debes responder de manera natural y conversacional. "
+                "Eres un asistente personal NAO, un robot humanoide. Tu respuesta será convertida a voz (text-to-speech), "
+                "por lo que debes responder de manera natural y conversacional, manteniendo tus respuestas cortas. "
                 "Sin embargo, cuando el usuario pida links, URLs, o información que no es apropiada "
-                "para comunicar verbalmente (como tablas, listas largas, etc.), usa las funciones "
+                "para comunicar verbalmente (como tablas, listas largas, código, etc.), usa las funciones "
                 "disponibles para enviar esa información por Telegram. "
                 "Luego, en tu respuesta verbal, simplemente menciona que has enviado la información "
                 "sin leer los detalles completos."
@@ -234,17 +234,16 @@ class GeminiAgent:
         self.telegram_chat_id = chat_id
 
 
-def main():
+def main(message):
     TELEGRAM_CHAT_ID = "1242472265"
     
     # Crear agente
     agent = GeminiAgent(telegram_chat_id=TELEGRAM_CHAT_ID)
     
     # Ejemplos de conversación
-    response = agent.process_message("Como hacer una función que me retorne la secuencia de fibonacci hasta el numero n en python")
+    response = agent.process_message(message)
+    print ("---------------------------------------------------------")
     print(f"Respuesta para TTS: {response['natural_response']}")
+    print ("---------------------------------------------------------")
 
-
-
-if __name__ == "__main__":
-    main()
+    return 0
