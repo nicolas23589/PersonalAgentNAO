@@ -5,6 +5,23 @@ from std_msgs.msg import String
 from naoqi_bridge_msgs.msg import AudioBuffer, HeadTouch
 import numpy as np
 import whisper
+import sys
+from pathlib import Path
+
+# Agregar el path de external-integrations al sys.path ANTES de importar gemini_agent
+# Usar path absoluto para mayor robustez
+current_file = Path(__file__).resolve()
+external_integrations_path = current_file.parent.parent.parent.parent / 'src' / 'external-integrations'
+sys.path.insert(0, str(external_integrations_path))
+
+# Importar gemini_agent con manejo de errores
+try:
+    import gemini_agent
+    GEMINI_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: No se pudo importar gemini_agent: {e}")
+    GEMINI_AVAILABLE = False
+
 
 class AudioTranscriber(Node):
     """
@@ -52,7 +69,19 @@ class AudioTranscriber(Node):
             int_audio = np.frombuffer(raw_audio_bytes, dtype=np.int16)
             float_audio = int_audio.astype(np.float32) / 32768.0
             result = self.model.transcribe(float_audio, language="es")
-            return (result.get("text","") or "").strip()
+            
+            text = (result.get("text","") or "").strip()
+            
+            # Llamar a gemini_agent.main con el texto transcrito
+            if text and GEMINI_AVAILABLE:
+                try:
+                    gemini_agent.main(text)
+                except Exception as e:
+                    self.get_logger().warning(f"Error al procesar con Gemini: {e}")
+            elif text and not GEMINI_AVAILABLE:
+                self.get_logger().info(f"Gemini no disponible. Texto: {text}")
+            
+            return text
         except Exception as e:
             self.get_logger().error(f"Error al transcribir con Whisper: {e}")
             return ""
