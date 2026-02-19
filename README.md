@@ -30,6 +30,7 @@ Dotar al NAO V6 de un modelo afectivo capaz de reconocer señales del usuario (v
 - Python 3.10+.
 - Colcon (`colcon build`).
 - Dependencias Python requeridas por cada paquete (por ejemplo: OpenCV, requests, etc.).
+- Deependencias incluidas en requirements.txt, para esto correr el comando `pip install -r requirements.txt`
 
 **Hardware**
 - Robot NAO V6 con NAOqi activo.
