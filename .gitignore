@@ -1,6 +1,8 @@
 ﻿# Secrets
 .env
 *.env
+credentials.json
+token.json
 
 # ROS2 / colcon
 build/

@@ -5,6 +5,13 @@ from pathlib import Path
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+from datetime import datetime, timedelta
+import pytz
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
+import pickle
 
 # Cargar variables del env
 env_path = Path(__file__).parent.parent.parent / '.env'
@@ -12,9 +19,151 @@ env_path = Path(__file__).parent.parent.parent / '.env'
 load_dotenv(dotenv_path=env_path)
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 GOOGLE_GEMINI_API_KEY = os.getenv('GOOGLE_GEMINI_API_KEY')
+GOOGLE_CALENDAR_CREDENTIALS_FILE = os.getenv('GOOGLE_CALENDAR_CREDENTIALS_FILE', 'credentials.json')
+GOOGLE_CALENDAR_TOKEN_FILE = os.getenv('GOOGLE_CALENDAR_TOKEN_FILE', 'token.json')
+GOOGLE_CALENDAR_ID = os.getenv('GOOGLE_CALENDAR_ID', 'primary')
+
+# Scopes para Google Calendar
+CALENDAR_SCOPES = ['https://www.googleapis.com/auth/calendar']
 
 # Alistar Gemini
 client = genai.Client(api_key=GOOGLE_GEMINI_API_KEY)
+
+
+class GoogleCalendarManager:
+    """Gestor de eventos de Google Calendar"""
+    
+    def __init__(self, credentials_file: str = None, token_file: str = None, calendar_id: str = 'primary'):
+        self.credentials_file = credentials_file or GOOGLE_CALENDAR_CREDENTIALS_FILE
+        self.token_file = token_file or GOOGLE_CALENDAR_TOKEN_FILE
+        self.calendar_id = calendar_id or GOOGLE_CALENDAR_ID
+        self.service = None
+        self._authenticate()
+    
+    def _authenticate(self):
+        """Autentica con Google Calendar usando OAuth 2.0"""
+        creds = None
+        
+        # El archivo token.json almacena los tokens de acceso y refresh del usuario
+        token_path = Path(__file__).parent.parent.parent / self.token_file
+        credentials_path = Path(__file__).parent.parent.parent / self.credentials_file
+        
+        if token_path.exists():
+            with open(token_path, 'rb') as token:
+                creds = pickle.load(token)
+        
+        # Si no hay credenciales válidas disponibles, solicita al usuario que inicie sesión
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            else:
+                if not credentials_path.exists():
+                    raise FileNotFoundError(
+                        f"No se encontró el archivo de credenciales: {credentials_path}\n"
+                        "Por favor, descarga el archivo credentials.json desde Google Cloud Console."
+                    )
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    str(credentials_path), CALENDAR_SCOPES
+                )
+                creds = flow.run_local_server(port=0)
+            
+            # Guardar las credenciales para la próxima ejecución
+            with open(token_path, 'wb') as token:
+                pickle.dump(creds, token)
+        
+        self.service = build('calendar', 'v3', credentials=creds)
+    
+    def create_event(self, summary: str, start_time: str, end_time: str = None, 
+                    description: str = None, location: str = None, timezone: str = 'America/Bogota'):
+        """Crea un evento en Google Calendar
+        
+        Args:
+            summary: Título del evento
+            start_time: Fecha y hora de inicio (formato ISO o natural)
+            end_time: Fecha y hora de fin (opcional, por defecto 1 hora después)
+            description: Descripción del evento
+            location: Ubicación del evento
+            timezone: Zona horaria (por defecto America/Bogota)
+        """
+        try:
+            # Parsear la fecha de inicio
+            start_dt = self._parse_datetime(start_time, timezone)
+            
+            # Si no hay hora de fin, agregar 1 hora por defecto
+            if end_time:
+                end_dt = self._parse_datetime(end_time, timezone)
+            else:
+                end_dt = start_dt + timedelta(hours=1)
+            
+            # Crear el evento
+            event = {
+                'summary': summary,
+                'start': {
+                    'dateTime': start_dt.isoformat(),
+                    'timeZone': timezone,
+                },
+                'end': {
+                    'dateTime': end_dt.isoformat(),
+                    'timeZone': timezone,
+                },
+            }
+            
+            if description:
+                event['description'] = description
+            
+            if location:
+                event['location'] = location
+            
+            created_event = self.service.events().insert(
+                calendarId=self.calendar_id,
+                body=event
+            ).execute()
+            
+            return {
+                "status": "success",
+                "event_id": created_event.get('id'),
+                "event_link": created_event.get('htmlLink'),
+                "summary": summary,
+                "start": start_dt.strftime('%Y-%m-%d %H:%M'),
+                "end": end_dt.strftime('%Y-%m-%d %H:%M')
+            }
+        
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": str(e)
+            }
+    
+    def _parse_datetime(self, datetime_str: str, timezone: str):
+        """Parsea una cadena de fecha/hora a objeto datetime"""
+        tz = pytz.timezone(timezone)
+        
+        # Intentar parsear como ISO
+        try:
+            dt = datetime.fromisoformat(datetime_str)
+            if dt.tzinfo is None:
+                dt = tz.localize(dt)
+            return dt
+        except:
+            pass
+        
+        # Formatos comunes
+        formats = [
+            '%Y-%m-%d %H:%M:%S',
+            '%Y-%m-%d %H:%M',
+            '%Y-%m-%d',
+            '%d/%m/%Y %H:%M',
+            '%d/%m/%Y',
+        ]
+        
+        for fmt in formats:
+            try:
+                dt = datetime.strptime(datetime_str, fmt)
+                return tz.localize(dt)
+            except:
+                continue
+        
+        raise ValueError(f"No se pudo parsear la fecha: {datetime_str}")
 
 
 class TelegramSender:
@@ -87,21 +236,63 @@ telegram_send_text_function = {
     }
 }
 
+create_calendar_event_function = {
+    "name": "create_calendar_event",
+    "description": "Crea un evento en Google Calendar basándose en la información proporcionada por el usuario en lenguaje natural. "
+                   "Usa esta función cuando el usuario quiera agendar, programar o recordar algo en su calendario.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "summary": {
+                "type": "string",
+                "description": "Título o resumen del evento (ej: 'Reunión con el equipo', 'Cita médica', 'Cumpleaños de María')"
+            },
+            "start_time": {
+                "type": "string",
+                "description": "Fecha y hora de inicio en formato ISO o formato legible (ej: '2026-03-15 14:30', '15/03/2026 14:30', '2026-03-15')"
+            },
+            "end_time": {
+                "type": "string",
+                "description": "Fecha y hora de fin (opcional, si no se proporciona se asume 1 hora de duración)"
+            },
+            "description": {
+                "type": "string",
+                "description": "Descripción detallada del evento"
+            },
+            "location": {
+                "type": "string",
+                "description": "Ubicación del evento (dirección física, link de videollamada, etc.)"
+            }
+        },
+        "required": ["summary", "start_time"]
+    }
+}
+
 # Lista de tools disponibles
 AVAILABLE_TOOLS = [
     telegram_send_link_function,
-    telegram_send_text_function
+    telegram_send_text_function,
+    create_calendar_event_function
 ]
 
 class GeminiAgent:
     """Agente de Gemini con function calling"""
     
-    def __init__(self, telegram_chat_id: str = None):
+    def __init__(self, telegram_chat_id: str = None, enable_calendar: bool = True):
         self.model_name = 'gemini-3-flash-preview'
         self.tools = [types.Tool(function_declarations=AVAILABLE_TOOLS)]
         self.telegram_sender = TelegramSender(TELEGRAM_BOT_TOKEN) if TELEGRAM_BOT_TOKEN else None
         self.telegram_chat_id = telegram_chat_id
         self.chat_history = []
+        
+        # Inicializar Google Calendar Manager
+        self.calendar_manager = None
+        if enable_calendar:
+            try:
+                self.calendar_manager = GoogleCalendarManager()
+            except Exception as e:
+                print(f"Advertencia: No se pudo inicializar Google Calendar: {e}")
+                print("La funcionalidad de calendario no estará disponible.")
         
     def _execute_function(self, function_name: str, function_args: dict):
         """Ejecuta las funciones llamadas por el modelo"""
@@ -128,6 +319,19 @@ class GeminiAgent:
             else:
                 return {"status": "error", "message": "Telegram not configured"}
         
+        elif function_name == "create_calendar_event":
+            if self.calendar_manager:
+                result = self.calendar_manager.create_event(
+                    summary=function_args.get("summary"),
+                    start_time=function_args.get("start_time"),
+                    end_time=function_args.get("end_time"),
+                    description=function_args.get("description"),
+                    location=function_args.get("location")
+                )
+                return result
+            else:
+                return {"status": "error", "message": "Google Calendar not configured"}
+        
         # Aquí se pueden agregar más funciones fácilmente
         else:
             return {"status": "error", "message": f"Unknown function: {function_name}"}
@@ -150,7 +354,10 @@ class GeminiAgent:
                 "Sin embargo, cuando el usuario pida links, URLs, o información que no es apropiada "
                 "para comunicar verbalmente (como tablas, listas largas, código, etc.), usa las funciones "
                 "disponibles para enviar esa información por Telegram. "
-                "Luego, en tu respuesta verbal, simplemente menciona que has enviado la información "
+                "Cuando el usuario quiera agendar, programar o recordar algo, usa la función de calendario "
+                "para crear el evento. Interpreta fechas relativas como 'mañana', 'la próxima semana', etc. "
+                "y conviértelas al formato correcto. Si falta información (como la hora), pregunta o sugiere "
+                "valores razonables. Luego, en tu respuesta verbal, confirma la creación del evento de forma natural "
                 "sin leer los detalles completos."
             )
         
@@ -241,8 +448,9 @@ def main(message):
     agent = GeminiAgent(telegram_chat_id=TELEGRAM_CHAT_ID)
     
     # Ejemplos de conversación
-    response = agent.process_message(message)
-    print ("---------------------------------------------------------")
+
+    response = agent.process_message("Pon en mi calendario una reunión con el equipo colivri el 28 de febrero de 2026 a la 1pm")
+
     print(f"Respuesta para TTS: {response['natural_response']}")
     print ("---------------------------------------------------------")
 
