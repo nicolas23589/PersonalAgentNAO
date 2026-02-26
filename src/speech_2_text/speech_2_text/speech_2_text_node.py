@@ -14,13 +14,18 @@ current_file = Path(__file__).resolve()
 external_integrations_path = current_file.parent.parent.parent.parent / 'src' / 'external-integrations'
 sys.path.insert(0, str(external_integrations_path))
 
-# Importar gemini_agent con manejo de errores
+# Importar gemini_agent con manejo de errores robusto
+GEMINI_AVAILABLE = False
 try:
-    import gemini_agent
+    import speech_2_text.speech_2_text.gemini_agent as gemini_agent
     GEMINI_AVAILABLE = True
+    print("✅ Gemini Agent importado exitosamente")
 except ImportError as e:
-    print(f"Warning: No se pudo importar gemini_agent: {e}")
-    GEMINI_AVAILABLE = False
+    print(f"⚠️ Warning: No se pudo importar gemini_agent: {e}")
+    print("💡 El nodo funcionará sin procesamiento Gemini")
+except Exception as e:
+    print(f"❌ Error inesperado al importar gemini_agent: {e}")
+    print("💡 El nodo funcionará sin procesamiento Gemini")
 
 
 class AudioTranscriber(Node):
