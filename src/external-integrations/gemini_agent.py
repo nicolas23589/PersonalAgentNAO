@@ -25,7 +25,9 @@ class GeminiAgent:
     
     def __init__(self, telegram_chat_id: str = None, enable_calendar: bool = True):
         self.model_name = 'gemini-3-flash-preview'
-        self.tools = [types.Tool(function_declarations=AVAILABLE_TOOLS)]
+        self.tools = [types.Tool(function_declarations=AVAILABLE_TOOLS), types.Tool(
+        google_search=types.GoogleSearch()
+    )]
         self.telegram_sender = TelegramSender(TELEGRAM_BOT_TOKEN) if TELEGRAM_BOT_TOKEN else None
         self.telegram_chat_id = telegram_chat_id
         self.chat_history = []
