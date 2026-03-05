@@ -5,8 +5,8 @@ from google import genai
 from google.genai import types
 
 # Importar los gestores externos
-from telegram_manager import TelegramSender, TELEGRAM_FUNCTIONS
-from calendar_manager import GoogleCalendarManager, CALENDAR_FUNCTIONS
+from .telegram_manager import TelegramSender, TELEGRAM_FUNCTIONS
+from .calendar_manager import GoogleCalendarManager, CALENDAR_FUNCTIONS
 
 # Cargar variables del env
 env_path = Path(__file__).parent.parent.parent / '.env'

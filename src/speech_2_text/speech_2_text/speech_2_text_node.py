@@ -7,20 +7,7 @@ import numpy as np
 import whisper
 import sys
 from pathlib import Path
-
-# Agregar el path de external-integrations al sys.path ANTES de importar gemini_agent
-# Usar path absoluto para mayor robustez
-current_file = Path(__file__).resolve()
-external_integrations_path = current_file.parent.parent.parent.parent / 'src' / 'external-integrations'
-sys.path.insert(0, str(external_integrations_path))
-
-# Importar gemini_agent con manejo de errores
-try:
-    import gemini_agent
-    GEMINI_AVAILABLE = True
-except ImportError as e:
-    print(f"Warning: No se pudo importar gemini_agent: {e}")
-    GEMINI_AVAILABLE = False
+from .external_integrations.gemini_agent import GeminiAgent  # Importar el módulo de Gemini Agent
 
 
 class AudioTranscriber(Node):
@@ -35,6 +22,11 @@ class AudioTranscriber(Node):
 
         self.create_subscription(AudioBuffer, '/mic', self.on_audio, 10)
         self.create_subscription(HeadTouch, '/head_touch', self.on_touch, 10)
+        
+        TELEGRAM_CHAT_ID = "1242472265"
+
+        # Crear agente
+        self.gemini_agent = GeminiAgent(telegram_chat_id=TELEGRAM_CHAT_ID)
 
         self.pub_text = self.create_publisher(String, '/asr/text', 10)
 
@@ -73,14 +65,20 @@ class AudioTranscriber(Node):
             text = (result.get("text","") or "").strip()
             
             # Llamar a gemini_agent.main con el texto transcrito
-            if text and GEMINI_AVAILABLE:
-                try:
-                    gemini_agent.main(text)
-                except Exception as e:
-                    self.get_logger().warning(f"Error al procesar con Gemini: {e}")
-            elif text and not GEMINI_AVAILABLE:
-                self.get_logger().info(f"Gemini no disponible. Texto: {text}")
+
+            print("Iniciando Gemini Agent...")
+            print("=" * 60)
+
+            response = self.gemini_agent.process_message(text)
+
+            print(f"Respuesta para TTS: {response['natural_response']}")
+            print("-" * 60)
+            print(f"Funciones ejecutadas: {len(response['function_calls'])}")
+            for fc in response['function_calls']:
+                print(f"  - {fc['name']}: {fc['result']['status']}")
+            print("=" * 60)
             
+
             return text
         except Exception as e:
             self.get_logger().error(f"Error al transcribir con Whisper: {e}")
