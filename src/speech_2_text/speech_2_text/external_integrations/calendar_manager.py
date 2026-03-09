@@ -35,8 +35,10 @@ class GoogleCalendarManager:
         creds = None
         
         # El archivo token.json almacena los tokens de acceso y refresh del usuario
-        token_path = Path(__file__).parent.parent.parent / self.token_file
-        credentials_path = Path(__file__).parent.parent.parent / self.credentials_file
+        # Raíz del proyecto: src/speech_2_text/speech_2_text/external_integrations/ -> 4 niveles arriba en src/, luego 1 más al workspace
+        project_root = Path(__file__).resolve().parent.parent.parent.parent.parent
+        token_path = project_root / self.token_file
+        credentials_path = project_root / self.credentials_file
         
         if token_path.exists():
             with open(token_path, 'rb') as token:
