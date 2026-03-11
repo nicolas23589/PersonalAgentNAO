@@ -1,11 +1,15 @@
 import os
 import requests
-from pathlib import Path
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
-# Cargar variables del env
-env_path = Path(__file__).parent.parent.parent / '.env'
-load_dotenv(dotenv_path=env_path)
+# Buscar .env subiendo directorios desde este archivo, o usar ruta absoluta si está definida
+_env_file = os.getenv('DOTENV_PATH') or find_dotenv(
+    filename='.env',
+    raise_error_if_not_found=False,
+    usecwd=False
+)
+if _env_file:
+    load_dotenv(dotenv_path=_env_file)
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 
 
