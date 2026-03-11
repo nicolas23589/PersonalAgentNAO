@@ -1,6 +1,7 @@
 import os
-from pathlib import Path
-from dotenv import load_dotenv
+from datetime import datetime
+import pytz
+from dotenv import load_dotenv, find_dotenv
 from google import genai
 from google.genai import types
 
@@ -8,9 +9,10 @@ from google.genai import types
 from .telegram_manager import TelegramSender, TELEGRAM_FUNCTIONS
 from .calendar_manager import GoogleCalendarManager, CALENDAR_FUNCTIONS
 
-# Cargar variables del env
-env_path = Path(__file__).parent.parent.parent / '.env'
-load_dotenv(dotenv_path=env_path)
+# Buscar .env subiendo directorios, o usar ruta absoluta si está definida en DOTENV_PATH
+_env_file = os.getenv('DOTENV_PATH') or find_dotenv(filename='.env', raise_error_if_not_found=False, usecwd=False)
+if _env_file:
+    load_dotenv(dotenv_path=_env_file)
 GOOGLE_GEMINI_API_KEY = os.getenv('GOOGLE_GEMINI_API_KEY')
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 
@@ -115,11 +117,16 @@ class GeminiAgent:
                 - 'function_calls': list - Lista de funciones ejecutadas
                 - 'full_response': str - Respuesta completa del modelo
         """
+        # Adjuntar fecha y hora actual para que el modelo interprete fechas relativas correctamente
+        now = datetime.now(pytz.timezone('America/Bogota'))
+        date_context = f"[Fecha y hora actual: {now.strftime('%A %d de %B de %Y, %H:%M')}] "
+        full_message = date_context + user_message
+
         # Log de caracteres enviados
-        print(f"[GeminiAgent] Enviando al modelo — caracteres del mensaje: {len(user_message)}")
+        print(f"[GeminiAgent] Enviando al modelo — caracteres del mensaje: {len(full_message)}")
 
         # Enviar mensaje usando el chat (igual que el script de prueba)
-        response = self.chat.send_message(user_message)
+        response = self.chat.send_message(full_message)
 
         function_calls_executed = []
 

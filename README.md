@@ -95,9 +95,12 @@ Este script lanza el flujo integrado de interacción con Orion:
 La arquitectura está compuesta por módulos desacoplados que se comunican vía tópicos:
 
 - **Speech2Text Node:** transcripción de voz con Whisper.
+Se puede ejecutar con el comando ros2 run speech_2_text speech_2_text_node
 - **EmotionClassifier Node:** clasificación emocional facial a partir de la cámara frontal.
 - **Context Node:** descripción de contexto visual para enriquecer la conversación.
+Se puede ejecutar con el comando ros2 run context_node context_node
 - **LLM Bridge Node:** generación de plan de interacción usando un modelo de lenguaje (JSON).
+Se puede ejecutar con ros2 run llm_bridge llm_bridge_node
 - **Behavior Renderer Node:** ejecución de voz, posturas, animaciones y LEDs mediante NAOqi.
 
 Cada paquete se encuentra dentro de `src/` y puede ser ejecutado individualmente para pruebas unitarias.

@@ -1,7 +1,7 @@
 import os
 import pickle
 from pathlib import Path
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 from datetime import datetime, timedelta
 import pytz
 from google.oauth2.credentials import Credentials
@@ -9,9 +9,10 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 
-# Cargar variables del env
-env_path = Path(__file__).parent.parent.parent / '.env'
-load_dotenv(dotenv_path=env_path)
+# Buscar .env subiendo directorios, o usar ruta absoluta si está definida en DOTENV_PATH
+_env_file = os.getenv('DOTENV_PATH') or find_dotenv(filename='.env', raise_error_if_not_found=False, usecwd=False)
+if _env_file:
+    load_dotenv(dotenv_path=_env_file)
 GOOGLE_CALENDAR_CREDENTIALS_FILE = os.getenv('GOOGLE_CALENDAR_CREDENTIALS_FILE', 'credentials.json')
 GOOGLE_CALENDAR_TOKEN_FILE = os.getenv('GOOGLE_CALENDAR_TOKEN_FILE', 'token.json')
 GOOGLE_CALENDAR_ID = os.getenv('GOOGLE_CALENDAR_ID', 'primary')
