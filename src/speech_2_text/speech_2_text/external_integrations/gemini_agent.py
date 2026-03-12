@@ -8,6 +8,7 @@ from google.genai import types
 # Importar los gestores externos
 from .telegram_manager import TelegramSender, TELEGRAM_FUNCTIONS
 from .calendar_manager import GoogleCalendarManager, CALENDAR_FUNCTIONS
+from .web_search_manager import GoogleSearchManager, WEB_SEARCH_FUNCTIONS
 
 # Buscar .env subiendo directorios, o usar ruta absoluta si está definida en DOTENV_PATH
 _env_file = os.getenv('DOTENV_PATH') or find_dotenv(filename='.env', raise_error_if_not_found=False, usecwd=False)
@@ -20,7 +21,7 @@ TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 client = genai.Client(api_key=GOOGLE_GEMINI_API_KEY)
 
 # Arreglo de funciones (tools) para function calling
-AVAILABLE_TOOLS = TELEGRAM_FUNCTIONS + CALENDAR_FUNCTIONS
+AVAILABLE_TOOLS = TELEGRAM_FUNCTIONS + CALENDAR_FUNCTIONS + WEB_SEARCH_FUNCTIONS
 
 SYSTEM_INSTRUCTION = (
     "Eres un asistente personal NAO, un robot humanoide. Tu respuesta será convertida a voz (text-to-speech), "
@@ -32,7 +33,10 @@ SYSTEM_INSTRUCTION = (
     "para crear el evento. Interpreta fechas relativas como 'mañana', 'la próxima semana', etc. "
     "y conviértelas al formato correcto. Si falta información (como la hora), pregunta o sugiere "
     "valores razonables. Luego, en tu respuesta verbal, confirma la creación del evento de forma natural "
-    "sin leer los detalles completos."
+    "sin leer los detalles completos. "
+    "Cuando el usuario pida información actualizada, noticias o cualquier dato que requiera "
+    "buscar en internet, usa la función web_search para obtener resultados. Resume verbalmente "
+    "los hallazgos más relevantes y, si hay links útiles, envíalos por Telegram."
 )
 
 
@@ -48,6 +52,9 @@ class GeminiAgent:
         ]
         self.telegram_sender = TelegramSender(TELEGRAM_BOT_TOKEN) if TELEGRAM_BOT_TOKEN else None
         self.telegram_chat_id = telegram_chat_id
+
+        # Inicializar Google Search Manager
+        self.search_manager = GoogleSearchManager()
 
         # Chat persistente igual que en el script de prueba:
         # la system_instruction va en config, no embebida en el mensaje
@@ -106,6 +113,13 @@ class GeminiAgent:
                 return result
             else:
                 return {"status": "error", "message": "Google Calendar not configured"}
+
+        elif function_name == "web_search":
+            result = self.search_manager.search(
+                query=function_args.get("query"),
+                num_results=function_args.get("num_results", 5)
+            )
+            return result
 
         # Aquí se pueden agregar más funciones fácilmente
         else:
