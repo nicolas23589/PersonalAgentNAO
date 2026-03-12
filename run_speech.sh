@@ -9,4 +9,4 @@ export DOTENV_PATH="$SCRIPT_DIR/.env"
 echo "Usando .env: $DOTENV_PATH"
 
 . "$SCRIPT_DIR/install/setup.bash"
-ros2 run speech_2_text audio_transcriber
+ros2 run speech_2_text speech2text_node
