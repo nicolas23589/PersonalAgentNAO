@@ -17,8 +17,11 @@ GOOGLE_CALENDAR_CREDENTIALS_FILE = os.getenv('GOOGLE_CALENDAR_CREDENTIALS_FILE',
 GOOGLE_CALENDAR_TOKEN_FILE = os.getenv('GOOGLE_CALENDAR_TOKEN_FILE', 'token.json')
 GOOGLE_CALENDAR_ID = os.getenv('GOOGLE_CALENDAR_ID', 'primary')
 
-# Scopes para Google Calendar
-CALENDAR_SCOPES = ['https://www.googleapis.com/auth/calendar']
+# Scopes para Google Calendar (incluye Tasks para usar un solo token)
+CALENDAR_SCOPES = [
+    'https://www.googleapis.com/auth/calendar',
+    'https://www.googleapis.com/auth/tasks'
+]
 
 
 class GoogleCalendarManager:

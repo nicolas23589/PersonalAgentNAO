@@ -28,7 +28,7 @@ client = genai.Client(api_key=API_KEY)
 
 # Crear un chat (agente simple con historial)
 chat = client.chats.create(
-    model='gemini-3-flash-preview',
+    model='gemini-3.1-flash-lite-preview',
     config=genai.types.GenerateContentConfig(
         system_instruction=(
             "Eres un asistente personal amigable y conciso. "
