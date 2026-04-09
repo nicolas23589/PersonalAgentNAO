@@ -4,6 +4,9 @@ Este repositorio contiene el workspace de ROS2 Jazzy desarrollado para implement
 
 El sistema fue construido como parte de un proyecto de grado en Ingeniería de Sistemas y Computación de la Universidad de los Andes (Bogotá, Colombia).
 
+> **🆕 ACTUALIZACIÓN:** El sistema ahora usa **Google Vertex AI** en lugar de Google GenAI SDK.  
+> Consulta [VERTEX_AI_SETUP.md](VERTEX_AI_SETUP.md) para la guía completa de migración y configuración.
+
 ---
 
 ## Objetivo general
@@ -41,18 +44,41 @@ Dotar al NAO V6 de un modelo afectivo capaz de reconocer señales del usuario (v
 
 ## Configuración de variables de entorno
 
-Este proyecto utiliza OpenAI para clasificación emocional y planeación con LLM.  
-La API Key **no debe escribirse en el código**. Se lee como variable de entorno.
+Este proyecto utiliza **Google Vertex AI** para el modelo de lenguaje Gemini.  
+Las credenciales se gestionan mediante **Application Default Credentials (ADC)** de GCP.
+
+### Configuración Rápida
+
+**Opción 1: Script Automático (Recomendado para Windows)**
+```powershell
+# Ejecuta el script de configuración
+.\setup_vertex_ai.ps1
+```
+
+**Opción 2: Manual**
 
 1. Copia el archivo de ejemplo:
    ```bash
    cp .env.example .env
    ```
 
-2. Abre `.env` y añade tu credencial:
+2. Edita `.env` y configura:
    ```env
-   OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
+   GCP_PROJECT_ID=tu-proyecto-gcp-id
+   GCP_LOCATION=us-central1
    ```
+
+3. Configura las credenciales de GCP:
+   ```bash
+   gcloud auth application-default login
+   ```
+
+4. Verifica la configuración:
+   ```bash
+   python test_vertex_setup.py
+   ```
+
+📖 **Para instrucciones detalladas:** consulta [VERTEX_AI_SETUP.md](VERTEX_AI_SETUP.md)
 
 > Nota: `.env` no se sube al repositorio por seguridad.
 

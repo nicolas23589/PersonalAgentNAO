@@ -2,27 +2,38 @@ import os
 from datetime import datetime
 import pytz
 from dotenv import load_dotenv, find_dotenv
-from google import genai
-from google.genai import types
+import vertexai
+from vertexai.generative_models import (
+    GenerativeModel,
+    Tool,
+    FunctionDeclaration,
+    GenerationConfig,
+    Content,
+    Part
+)
 
 # Importar los gestores externos
 from .telegram_manager import TelegramSender, TELEGRAM_FUNCTIONS
 from .calendar_manager import GoogleCalendarManager, CALENDAR_FUNCTIONS
 from .search_manager import WebSearchManager, SEARCH_FUNCTIONS
 from .tasks_manager import GoogleTasksManager, TASKS_FUNCTIONS
+from .keep_manager import GoogleKeepManager, KEEP_FUNCTIONS
 
 # Buscar .env subiendo directorios, o usar ruta absoluta si está definida en DOTENV_PATH
 _env_file = os.getenv('DOTENV_PATH') or find_dotenv(filename='.env', raise_error_if_not_found=False, usecwd=False)
 if _env_file:
     load_dotenv(dotenv_path=_env_file)
-GOOGLE_GEMINI_API_KEY = os.getenv('GOOGLE_GEMINI_API_KEY')
+
+# Configuración de Vertex AI
+GCP_PROJECT_ID = os.getenv('GCP_PROJECT_ID')
+GCP_LOCATION = os.getenv('GCP_LOCATION', 'us-central1')  # Región por defecto
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 
-# Alistar Gemini
-client = genai.Client(api_key=GOOGLE_GEMINI_API_KEY)
+# Inicializar Vertex AI
+vertexai.init(project=GCP_PROJECT_ID, location=GCP_LOCATION)
 
 # Arreglo de funciones (tools) para function calling
-AVAILABLE_TOOLS = TELEGRAM_FUNCTIONS + CALENDAR_FUNCTIONS + SEARCH_FUNCTIONS + TASKS_FUNCTIONS
+AVAILABLE_TOOLS = TELEGRAM_FUNCTIONS + CALENDAR_FUNCTIONS + SEARCH_FUNCTIONS + TASKS_FUNCTIONS + KEEP_FUNCTIONS
 
 SYSTEM_INSTRUCTION = (
     "Eres un asistente personal NAO, un robot humanoide. Tu respuesta será convertida a voz (text-to-speech), "
@@ -40,57 +51,52 @@ SYSTEM_INSTRUCTION = (
     "breve y natural para comunicar verbalmente, y envía los links completos por Telegram si es apropiado. "
     "Cuando el usuario quiera crear una tarea, recordatorio o pendiente, usa Google Tasks. Las tareas "
     "son para cosas por hacer (to-do), mientras que los eventos de calendario son para citas o reuniones "
-    "con hora específica. Si el usuario dice 'recuérdame comprar leche', crea una tarea, no un evento."
+    "con hora específica. Si el usuario dice 'recuérdame comprar leche', crea una tarea, no un evento. "
+    "Cuando el usuario quiera guardar notas, ideas, información general o crear listas, usa Google Keep. "
+    "Keep es ideal para notas rápidas, listas de compras, ideas y cualquier información que no sea una tarea "
+    "específica ni un evento con fecha. Por ejemplo: 'guarda esta receta', 'anota esta idea', 'crea una lista de compras'."
 )
 
 
 class GeminiAgent:
-    """Agente de Gemini con function calling"""
+    """Agente de Gemini con function calling usando Vertex AI"""
 
     def __init__(self, telegram_chat_id: str = None, enable_calendar: bool = True, use_native_search: bool = False):
-        self.model_name = 'gemini-3.1-flash-lite-preview'
+        self.model_name = 'gemini-1.5-pro-002'  # Modelo estable de Vertex AI
         
-        # Configurar herramientas (tools)
-        # Si use_native_search=True, usa Google Search nativo (grounding)
-        # Si use_native_search=False, usa Custom Search API con function calling
+        # Configurar herramientas (tools) para Vertex AI
         self.tools = []
         
         if use_native_search:
-            # Google Search nativo (grounding) - no requiere API Key adicional
-            # NO se puede combinar con function calling, así que solo usamos grounding
-            self.tools.append(
-                types.Tool(
-                    google_search=types.GoogleSearch()
-                )
-            )
-            # Con native search, agregamos function calling por separado (sin SEARCH_FUNCTIONS)
-            self.tools.append(
-                types.Tool(
-                    function_declarations=TELEGRAM_FUNCTIONS + CALENDAR_FUNCTIONS
-                )
-            )
+            # Google Search con grounding en Vertex AI
+            # Nota: Grounding with Google Search en Vertex AI requiere configuración especial
+            print("[Advertencia] Google Search grounding no está completamente implementado en esta versión")
+            # Por ahora, usar solo las funciones disponibles
+            vertex_functions = self._convert_to_vertex_functions(TELEGRAM_FUNCTIONS + CALENDAR_FUNCTIONS + TASKS_FUNCTIONS)
+            if vertex_functions:
+                self.tools.append(Tool(function_declarations=vertex_functions))
         else:
-            # Custom Search API con function calling manual (incluye todas las funciones)
-            self.tools.append(
-                types.Tool(
-                    function_declarations=AVAILABLE_TOOLS
-                )
-            )
+            # Custom Search API con function calling manual
+            vertex_functions = self._convert_to_vertex_functions(AVAILABLE_TOOLS)
+            if vertex_functions:
+                self.tools.append(Tool(function_declarations=vertex_functions))
         
         self.use_native_search = use_native_search
         self.telegram_sender = TelegramSender(TELEGRAM_BOT_TOKEN) if TELEGRAM_BOT_TOKEN else None
         self.telegram_chat_id = telegram_chat_id
 
-        # Chat persistente igual que en el script de prueba:
-        # la system_instruction va en config, no embebida en el mensaje
-        self.chat = client.chats.create(
-            model=self.model_name,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION,
-                tools=self.tools,
+        # Crear modelo con system instruction
+        self.model = GenerativeModel(
+            model_name=self.model_name,
+            system_instruction=[SYSTEM_INSTRUCTION],
+            tools=self.tools if self.tools else None,
+            generation_config=GenerationConfig(
                 temperature=0.7,
             )
         )
+        
+        # Iniciar chat persistente
+        self.chat = self.model.start_chat()
 
         # Inicializar Google Calendar Manager
         self.calendar_manager = None
@@ -116,6 +122,30 @@ class GeminiAgent:
         except Exception as e:
             print(f"Advertencia: No se pudo inicializar Google Tasks: {e}")
             print("La funcionalidad de tareas no estará disponible.")
+        
+        # Inicializar Google Keep Manager
+        self.keep_manager = None
+        try:
+            self.keep_manager = GoogleKeepManager()
+        except Exception as e:
+            print(f"Advertencia: No se pudo inicializar Google Keep: {e}")
+            print("La funcionalidad de Keep no estará disponible.")
+            print("Para usar Keep, configura GOOGLE_KEEP_EMAIL y GOOGLE_KEEP_APP_PASSWORD en .env")
+    
+    def _convert_to_vertex_functions(self, function_declarations):
+        """Convierte las declaraciones de función al formato de Vertex AI"""
+        vertex_functions = []
+        for func_dict in function_declarations:
+            try:
+                vertex_func = FunctionDeclaration(
+                    name=func_dict.get('name'),
+                    description=func_dict.get('description'),
+                    parameters=func_dict.get('parameters', {})
+                )
+                vertex_functions.append(vertex_func)
+            except Exception as e:
+                print(f"[Advertencia] No se pudo convertir función {func_dict.get('name', 'unknown')}: {e}")
+        return vertex_functions
 
     def _execute_function(self, function_name: str, function_args: dict):
         """Ejecuta las funciones llamadas por el modelo"""
@@ -194,6 +224,40 @@ class GeminiAgent:
                 return result
             else:
                 return {"status": "error", "message": "Google Tasks not configured"}
+        
+        elif function_name == "create_keep_note":
+            if self.keep_manager:
+                result = self.keep_manager.create_note(
+                    title=function_args.get("title"),
+                    content=function_args.get("content"),
+                    color=function_args.get("color", "DEFAULT"),
+                    pinned=function_args.get("pinned", False)
+                )
+                return result
+            else:
+                return {"status": "error", "message": "Google Keep not configured"}
+        
+        elif function_name == "create_keep_list":
+            if self.keep_manager:
+                result = self.keep_manager.create_list(
+                    title=function_args.get("title"),
+                    items=function_args.get("items"),
+                    color=function_args.get("color", "DEFAULT"),
+                    pinned=function_args.get("pinned", False)
+                )
+                return result
+            else:
+                return {"status": "error", "message": "Google Keep not configured"}
+        
+        elif function_name == "search_keep_notes":
+            if self.keep_manager:
+                result = self.keep_manager.search_notes(
+                    query=function_args.get("query"),
+                    max_results=function_args.get("max_results", 5)
+                )
+                return result
+            else:
+                return {"status": "error", "message": "Google Keep not configured"}
 
         # Aquí se pueden agregar más funciones fácilmente
         else:
@@ -217,7 +281,7 @@ class GeminiAgent:
         # Log de caracteres enviados
         print(f"[GeminiAgent] Enviando al modelo — caracteres del mensaje: {len(full_message)}")
 
-        # Enviar mensaje usando el chat (igual que el script de prueba)
+        # Enviar mensaje usando Vertex AI
         response = self.chat.send_message(full_message)
 
         function_calls_executed = []
@@ -240,7 +304,8 @@ class GeminiAgent:
 
             function_call = response.candidates[0].content.parts[0].function_call
             function_name = function_call.name
-            function_args = dict(function_call.args)
+            # Convertir MapComposite a dict
+            function_args = dict(function_call.args) if function_call.args else {}
 
             print(f"[GeminiAgent] Ejecutando función: {function_name}")
             print(f"[GeminiAgent] Argumentos: {function_args}")
@@ -257,14 +322,12 @@ class GeminiAgent:
             if function_result.get('status') == 'error':
                 print(f"[GeminiAgent] ❌ Error: {function_result.get('message', 'Sin mensaje')}")
 
-            # Devolver el resultado al modelo dentro del mismo chat
+            # Devolver el resultado al modelo dentro del mismo chat usando Vertex AI format
             print(f"[GeminiAgent] Reintentando con function result — función: {function_name}")
             response = self.chat.send_message(
-                types.Part(
-                    function_response=types.FunctionResponse(
-                        name=function_name,
-                        response=function_result
-                    )
+                Part.from_function_response(
+                    name=function_name,
+                    response=function_result
                 )
             )
         
