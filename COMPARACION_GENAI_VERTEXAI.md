@@ -102,7 +102,7 @@ chat = client.chats.create(
 **Ahora (Vertex AI):**
 ```python
 model = GenerativeModel(
-    model_name='gemini-1.5-pro-002-002',
+    model_name='gemini-2.5-pro-002',
     system_instruction=[SYSTEM_INSTRUCTION],
     tools=tools,
     generation_config=GenerationConfig(
@@ -250,8 +250,8 @@ google-cloud-aiplatform>=1.38.0
 - Modelos en preview/beta
 
 ### Vertex AI
-- `gemini-1.5-pro-002-002` ⭐ **Recomendado**
-- `gemini-1.5-pro-002`
+- `gemini-2.5-pro-002` ⭐ **Recomendado**
+- `gemini-2.5-pro`
 - `gemini-1.0-pro`
 - Modelos estables para producción
 

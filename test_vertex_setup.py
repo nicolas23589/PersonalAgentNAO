@@ -78,14 +78,14 @@ except Exception as e:
 print("\n5️⃣  Probando modelo Gemini...")
 try:
     model = GenerativeModel(
-        model_name="gemini-1.5-pro-002",
+        model_name="gemini-2.5-pro",
         generation_config=GenerationConfig(temperature=0.7)
     )
     print("   ✅ Modelo Gemini cargado correctamente")
     
     # Hacer una petición simple
     print("\n   📤 Enviando mensaje de prueba al modelo...")
-    response = model.generate_content("Di 'Hola' en español y confirma que funcionas correctamente en una frase corta.")
+    response = model.generate_content(" Puedes mandarme un mensaje de hola al telegram?.")
     
     if response and response.text:
         print(f"   📥 Respuesta del modelo:")

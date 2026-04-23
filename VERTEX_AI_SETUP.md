@@ -170,7 +170,7 @@ LOCATION = "us-central1"
 
 vertexai.init(project=PROJECT_ID, location=LOCATION)
 
-model = GenerativeModel("gemini-1.5-pro-002-002")
+model = GenerativeModel("gemini-2.5-pro-002")
 response = model.generate_content("Hola, ¿funcionas correctamente?")
 print(response.text)
 ```
@@ -227,8 +227,8 @@ Consulta precios actualizados: https://cloud.google.com/vertex-ai/pricing
 | `types.Part(function_response=...)` | `Part.from_function_response(...)` |
 
 ### Modelos Disponibles:
-- ✅ `gemini-1.5-pro-002-002` (recomendado)
-- ✅ `gemini-1.5-pro-002`
+- ✅ `gemini-2.5-pro-002` (recomendado)
+- ✅ `gemini-2.5-pro`
 - ✅ `gemini-1.0-pro`
 
 ---

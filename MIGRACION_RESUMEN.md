@@ -119,7 +119,7 @@ chat = client.chats.create(model='gemini-3-flash-preview')
 ```python
 import vertexai
 vertexai.init(project=GCP_PROJECT_ID, location=GCP_LOCATION)
-model = GenerativeModel('gemini-1.5-pro-002-002')
+model = GenerativeModel('gemini-2.5-pro-002')
 chat = model.start_chat()
 ```
 

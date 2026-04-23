@@ -62,7 +62,7 @@ class GeminiAgent:
     """Agente de Gemini con function calling usando Vertex AI"""
 
     def __init__(self, telegram_chat_id: str = None, enable_calendar: bool = True, use_native_search: bool = False):
-        self.model_name = 'gemini-1.5-pro-002'  # Modelo estable de Vertex AI
+        self.model_name = 'gemini-2.5-pro'  # Modelo estable de Vertex AI
         
         # Configurar herramientas (tools) para Vertex AI
         self.tools = []
