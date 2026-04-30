@@ -18,7 +18,7 @@ from speech_2_text.external_integrations.gemini_agent import GeminiAgent
 #   - "Busca noticias sobre inteligencia artificial"
 #   - "¿Cuándo es el próximo eclipse solar en Estados Unidos?"
 #   - "Envíame un tutorial de Python por Telegram"
-MENSAJE_PRUEBA = "puedes hacer lo siguiente? 1. Mandarme un hola a telegram 2. poner una reunión en mi calendario para mañana a las 3pm con el título 'Reunión de prueba'  3. Buscar en Google que hora es en colombia justo en este momento 4. Poner una tarea de limpier cuarto en la categoría de mis tareas"
+MENSAJE_PRUEBA = "puedes poner una nota en mis notas de notion que diga de titulo prueba y de texto hola esto es una prueba?"
 
 # ID de chat de Telegram (opcional, si quieres probar funciones de Telegram)
 TELEGRAM_CHAT_ID = "1242472265"  # Puedes cambiarlo o dejarlo en None

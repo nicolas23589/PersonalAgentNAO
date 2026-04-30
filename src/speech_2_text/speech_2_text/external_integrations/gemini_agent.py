@@ -17,7 +17,7 @@ from .telegram_manager import TelegramSender, TELEGRAM_FUNCTIONS
 from .calendar_manager import GoogleCalendarManager, CALENDAR_FUNCTIONS
 from .search_manager import WebSearchManager, SEARCH_FUNCTIONS
 from .tasks_manager import GoogleTasksManager, TASKS_FUNCTIONS
-from .keep_manager import GoogleKeepManager, KEEP_FUNCTIONS
+from .notion_manager import NotionManager, NOTION_FUNCTIONS
 
 # Buscar .env subiendo directorios, o usar ruta absoluta si está definida en DOTENV_PATH
 _env_file = os.getenv('DOTENV_PATH') or find_dotenv(filename='.env', raise_error_if_not_found=False, usecwd=False)
@@ -33,7 +33,7 @@ TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 vertexai.init(project=GCP_PROJECT_ID, location=GCP_LOCATION)
 
 # Arreglo de funciones (tools) para function calling
-AVAILABLE_TOOLS = TELEGRAM_FUNCTIONS + CALENDAR_FUNCTIONS + SEARCH_FUNCTIONS + TASKS_FUNCTIONS + KEEP_FUNCTIONS
+AVAILABLE_TOOLS = TELEGRAM_FUNCTIONS + CALENDAR_FUNCTIONS + SEARCH_FUNCTIONS + TASKS_FUNCTIONS + NOTION_FUNCTIONS
 
 SYSTEM_INSTRUCTION = (
     "Eres un asistente personal NAO, un robot humanoide. Tu respuesta será convertida a voz (text-to-speech), "
@@ -52,8 +52,8 @@ SYSTEM_INSTRUCTION = (
     "Cuando el usuario quiera crear una tarea, recordatorio o pendiente, usa Google Tasks. Las tareas "
     "son para cosas por hacer (to-do), mientras que los eventos de calendario son para citas o reuniones "
     "con hora específica. Si el usuario dice 'recuérdame comprar leche', crea una tarea, no un evento. "
-    "Cuando el usuario quiera guardar notas, ideas, información general o crear listas, usa Google Keep. "
-    "Keep es ideal para notas rápidas, listas de compras, ideas y cualquier información que no sea una tarea "
+    "Cuando el usuario quiera guardar notas, ideas, información general o crear listas, usa Notion. "
+    "Notion es ideal para notas rápidas, listas de compras, ideas y cualquier información que no sea una tarea "
     "específica ni un evento con fecha. Por ejemplo: 'guarda esta receta', 'anota esta idea', 'crea una lista de compras'."
 )
 
@@ -123,14 +123,14 @@ class GeminiAgent:
             print(f"Advertencia: No se pudo inicializar Google Tasks: {e}")
             print("La funcionalidad de tareas no estará disponible.")
         
-        # Inicializar Google Keep Manager
-        self.keep_manager = None
+        # Inicializar Notion Manager
+        self.notion_manager = None
         try:
-            self.keep_manager = GoogleKeepManager()
+            self.notion_manager = NotionManager()
         except Exception as e:
-            print(f"Advertencia: No se pudo inicializar Google Keep: {e}")
-            print("La funcionalidad de Keep no estará disponible.")
-            print("Para usar Keep, configura GOOGLE_KEEP_EMAIL y GOOGLE_KEEP_APP_PASSWORD en .env")
+            print(f"Advertencia: No se pudo inicializar Notion: {e}")
+            print("La funcionalidad de Notion no estará disponible.")
+            print("Para usar Notion, configura NOTION_TOKEN y NOTION_DATABASE_ID en .env")
     
     def _convert_to_vertex_functions(self, function_declarations):
         """Convierte las declaraciones de función al formato de Vertex AI"""
@@ -225,39 +225,37 @@ class GeminiAgent:
             else:
                 return {"status": "error", "message": "Google Tasks not configured"}
         
-        elif function_name == "create_keep_note":
-            if self.keep_manager:
-                result = self.keep_manager.create_note(
+        elif function_name == "create_notion_page":
+            if self.notion_manager:
+                result = self.notion_manager.create_page(
                     title=function_args.get("title"),
                     content=function_args.get("content"),
-                    color=function_args.get("color", "DEFAULT"),
-                    pinned=function_args.get("pinned", False)
+                    tags=function_args.get("tags")
                 )
                 return result
             else:
-                return {"status": "error", "message": "Google Keep not configured"}
-        
-        elif function_name == "create_keep_list":
-            if self.keep_manager:
-                result = self.keep_manager.create_list(
+                return {"status": "error", "message": "Notion not configured"}
+
+        elif function_name == "create_notion_list":
+            if self.notion_manager:
+                result = self.notion_manager.create_list(
                     title=function_args.get("title"),
                     items=function_args.get("items"),
-                    color=function_args.get("color", "DEFAULT"),
-                    pinned=function_args.get("pinned", False)
+                    tags=function_args.get("tags")
                 )
                 return result
             else:
-                return {"status": "error", "message": "Google Keep not configured"}
-        
-        elif function_name == "search_keep_notes":
-            if self.keep_manager:
-                result = self.keep_manager.search_notes(
+                return {"status": "error", "message": "Notion not configured"}
+
+        elif function_name == "search_notion_pages":
+            if self.notion_manager:
+                result = self.notion_manager.search_pages(
                     query=function_args.get("query"),
                     max_results=function_args.get("max_results", 5)
                 )
                 return result
             else:
-                return {"status": "error", "message": "Google Keep not configured"}
+                return {"status": "error", "message": "Notion not configured"}
 
         # Aquí se pueden agregar más funciones fácilmente
         else:
