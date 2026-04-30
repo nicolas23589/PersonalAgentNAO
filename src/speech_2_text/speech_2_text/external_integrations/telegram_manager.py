@@ -38,7 +38,18 @@ class TelegramSender:
         else:
             text = url
         return self.send_message(chat_id, text)
-        #TODO enviar más info, imágenes, docs, etc.
+
+    def send_photo_url(self, chat_id: str, photo_url: str, caption: str = ""):
+        """Envía una imagen por URL a Telegram (Static Maps, Street View, etc.)"""
+        url = f"{self.base_url}/sendPhoto"
+        data = {
+            "chat_id": chat_id,
+            "photo": photo_url,
+            "caption": caption,
+            "parse_mode": "Markdown"
+        }
+        response = requests.post(url, json=data)
+        return response.json()
 
 
 # Definición de funciones para Telegram (function calling)

@@ -18,6 +18,7 @@ from .calendar_manager import GoogleCalendarManager, CALENDAR_FUNCTIONS
 from .search_manager import WebSearchManager, SEARCH_FUNCTIONS
 from .tasks_manager import GoogleTasksManager, TASKS_FUNCTIONS
 from .notion_manager import NotionManager, NOTION_FUNCTIONS
+from .maps_manager import MapsManager, MAPS_FUNCTIONS
 
 # Buscar .env subiendo directorios, o usar ruta absoluta si está definida en DOTENV_PATH
 _env_file = os.getenv('DOTENV_PATH') or find_dotenv(filename='.env', raise_error_if_not_found=False, usecwd=False)
@@ -33,7 +34,7 @@ TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 vertexai.init(project=GCP_PROJECT_ID, location=GCP_LOCATION)
 
 # Arreglo de funciones (tools) para function calling
-AVAILABLE_TOOLS = TELEGRAM_FUNCTIONS + CALENDAR_FUNCTIONS + SEARCH_FUNCTIONS + TASKS_FUNCTIONS + NOTION_FUNCTIONS
+AVAILABLE_TOOLS = TELEGRAM_FUNCTIONS + CALENDAR_FUNCTIONS + SEARCH_FUNCTIONS + TASKS_FUNCTIONS + NOTION_FUNCTIONS + MAPS_FUNCTIONS
 
 SYSTEM_INSTRUCTION = (
     "Eres un asistente personal NAO, un robot humanoide. Tu respuesta será convertida a voz (text-to-speech), "
@@ -54,7 +55,12 @@ SYSTEM_INSTRUCTION = (
     "con hora específica. Si el usuario dice 'recuérdame comprar leche', crea una tarea, no un evento. "
     "Cuando el usuario quiera guardar notas, ideas, información general o crear listas, usa Notion. "
     "Notion es ideal para notas rápidas, listas de compras, ideas y cualquier información que no sea una tarea "
-    "específica ni un evento con fecha. Por ejemplo: 'guarda esta receta', 'anota esta idea', 'crea una lista de compras'."
+    "específica ni un evento con fecha. Por ejemplo: 'guarda esta receta', 'anota esta idea', 'crea una lista de compras'. "
+    "Cuando el usuario pregunte sobre mapas, tráfico, rutas, lugares, distancias, 'cómo llegar', 'qué hay cerca', "
+    "o quiera ver un lugar visualmente, usa las funciones de Google Maps. "
+    "Para respuestas verbales resume el resultado (tiempo de viaje, nombre del lugar, estado del tráfico). "
+    "Siempre envía por Telegram los mapas estáticos, Street Views, y links de rutas para que el usuario los abra. "
+    "Si la ubicación del usuario está disponible en el contexto, úsala como origen o referencia por defecto."
 )
 
 
@@ -131,6 +137,18 @@ class GeminiAgent:
             print(f"Advertencia: No se pudo inicializar Notion: {e}")
             print("La funcionalidad de Notion no estará disponible.")
             print("Para usar Notion, configura NOTION_TOKEN y NOTION_DATABASE_ID en .env")
+
+        # Inicializar Google Maps Manager
+        self.maps_manager = None
+        try:
+            self.maps_manager = MapsManager()
+            # Detectar ubicación del dispositivo al iniciar
+            self._device_location = self.maps_manager.refresh_location()
+        except Exception as e:
+            self._device_location = None
+            print(f"Advertencia: No se pudo inicializar Google Maps: {e}")
+            print("La funcionalidad de mapas no estará disponible.")
+            print("Para usar Maps, configura GOOGLE_MAPS_API_KEY en .env")
     
     def _convert_to_vertex_functions(self, function_declarations):
         """Convierte las declaraciones de función al formato de Vertex AI"""
@@ -258,6 +276,94 @@ class GeminiAgent:
                 return {"status": "error", "message": "Notion not configured"}
 
         # Aquí se pueden agregar más funciones fácilmente
+        elif function_name == "search_places":
+            if self.maps_manager:
+                return self.maps_manager.search_places(
+                    query=function_args.get("query"),
+                    location=function_args.get("location"),
+                    radius_km=function_args.get("radius_km", 5),
+                    max_results=function_args.get("max_results", 5)
+                )
+            return {"status": "error", "message": "Google Maps not configured"}
+
+        elif function_name == "get_directions":
+            if self.maps_manager:
+                return self.maps_manager.get_directions(
+                    destination=function_args.get("destination"),
+                    origin=function_args.get("origin"),
+                    mode=function_args.get("mode", "driving"),
+                    send_telegram_link=function_args.get("send_telegram_link", True)
+                )
+            return {"status": "error", "message": "Google Maps not configured"}
+
+        elif function_name == "get_traffic_info":
+            if self.maps_manager:
+                return self.maps_manager.get_traffic_info(
+                    destination=function_args.get("destination"),
+                    origin=function_args.get("origin")
+                )
+            return {"status": "error", "message": "Google Maps not configured"}
+
+        elif function_name == "get_place_details":
+            if self.maps_manager:
+                return self.maps_manager.get_place_details(
+                    place_name=function_args.get("place_name"),
+                    location_hint=function_args.get("location_hint"),
+                    send_telegram_link=function_args.get("send_telegram_link", True)
+                )
+            return {"status": "error", "message": "Google Maps not configured"}
+
+        elif function_name == "send_static_map":
+            if self.maps_manager:
+                result = self.maps_manager.get_static_map_url(
+                    center=function_args.get("center"),
+                    zoom=function_args.get("zoom", 14),
+                    markers=function_args.get("markers"),
+                    map_type=function_args.get("map_type", "roadmap"),
+                    caption=function_args.get("caption")
+                )
+                # Enviar imagen por Telegram si está configurado
+                if result["status"] == "success" and self.telegram_sender and self.telegram_chat_id:
+                    try:
+                        self.telegram_sender.send_photo_url(
+                            chat_id=self.telegram_chat_id,
+                            photo_url=result["static_map_url"],
+                            caption=result.get("caption", "")
+                        )
+                    except Exception as e:
+                        # Fallback: enviar como link si no soporta foto directa
+                        self.telegram_sender.send_message(
+                            chat_id=self.telegram_chat_id,
+                            text=f"🗺️ *{result.get('caption', 'Mapa')}*\n{result['static_map_url']}"
+                        )
+                return result
+            return {"status": "error", "message": "Google Maps not configured"}
+
+        elif function_name == "send_street_view":
+            if self.maps_manager:
+                result = self.maps_manager.get_street_view(
+                    location=function_args.get("location"),
+                    heading=function_args.get("heading"),
+                    caption=function_args.get("caption")
+                )
+                if result["status"] == "success" and self.telegram_sender and self.telegram_chat_id:
+                    try:
+                        self.telegram_sender.send_photo_url(
+                            chat_id=self.telegram_chat_id,
+                            photo_url=result["street_view_image_url"],
+                            caption=result.get("caption", "")
+                        )
+                    except Exception as e:
+                        self.telegram_sender.send_message(
+                            chat_id=self.telegram_chat_id,
+                            text=(
+                                f"📸 *{result.get('caption', 'Street View')}*\n"
+                                f"[Ver en Street View]({result['street_view_explore_url']})"
+                            )
+                        )
+                return result
+            return {"status": "error", "message": "Google Maps not configured"}
+
         else:
             return {"status": "error", "message": f"Unknown function: {function_name}"}
 
@@ -274,7 +380,14 @@ class GeminiAgent:
         # Adjuntar fecha y hora actual para que el modelo interprete fechas relativas correctamente
         now = datetime.now(pytz.timezone('America/Bogota'))
         date_context = f"[Fecha y hora actual: {now.strftime('%A %d de %B de %Y, %H:%M')}] "
-        full_message = date_context + user_message
+
+        # Adjuntar ubicación del dispositivo si está disponible
+        location_context = ""
+        if self._device_location:
+            lat, lng = self._device_location
+            location_context = f"[Ubicación actual del usuario: {lat:.5f},{lng:.5f}] "
+
+        full_message = date_context + location_context + user_message
 
         # Log de caracteres enviados
         print(f"[GeminiAgent] Enviando al modelo — caracteres del mensaje: {len(full_message)}")
