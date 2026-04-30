@@ -12,7 +12,7 @@ from speech_2_text.external_integrations.gemini_agent import GeminiAgent
 
 
 # ==================== CONFIGURACIÓN ====================
-# Cambia este mensaje para probar diferentes consultas
+# Cambia este mensaje para probar diferentes consultas 
 # Ejemplos:
 #   - "Hola, ¿cómo estás?"
 #   - "Busca noticias sobre inteligencia artificial"
