@@ -90,7 +90,7 @@ MAPS_FUNCTIONS = [
         "description": (
             "Obtiene indicaciones de ruta entre dos puntos, incluyendo distancia, tiempo estimado "
             "y condiciones de tráfico en tiempo real. "
-            "También genera un enlace de Google Maps con la ruta para enviar por Telegram. "
+            "El link de Google Maps con la ruta se envía automáticamente a Telegram — NO es necesario llamar send_telegram_link por separado. "
             "Úsalo cuando el usuario pregunte cómo llegar a un lugar, cuánto tarda en llegar, o cómo está el tráfico."
         ),
         "parameters": {
@@ -125,6 +125,7 @@ MAPS_FUNCTIONS = [
         "description": (
             "Obtiene información detallada de un lugar específico: dirección completa, teléfono, "
             "horario de atención, rating, reseñas, sitio web y enlace de Google Maps. "
+            "La información se envía automáticamente a Telegram — NO es necesario llamar send_telegram_link por separado. "
             "Úsalo cuando el usuario pregunte por los detalles de un local o negocio específico."
         ),
         "parameters": {
@@ -213,6 +214,7 @@ MAPS_FUNCTIONS = [
         "name": "get_traffic_info",
         "description": (
             "Obtiene información del tráfico actual en una ruta o zona. "
+            "El resumen de tráfico y el link de ruta se envían automáticamente a Telegram — NO es necesario llamar send_telegram_link por separado. "
             "Responde preguntas como '¿cómo está el tráfico para ir a X?', "
             "'¿cuánto tarda ir al trabajo con el tráfico de ahora?'"
         ),

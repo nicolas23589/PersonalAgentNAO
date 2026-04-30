@@ -288,29 +288,69 @@ class GeminiAgent:
 
         elif function_name == "get_directions":
             if self.maps_manager:
-                return self.maps_manager.get_directions(
+                result = self.maps_manager.get_directions(
                     destination=function_args.get("destination"),
                     origin=function_args.get("origin"),
                     mode=function_args.get("mode", "driving"),
                     send_telegram_link=function_args.get("send_telegram_link", True)
                 )
+                if result.get("status") == "success" and result.get("send_to_telegram", True) and self.telegram_sender and self.telegram_chat_id:
+                    mode_emoji = {"driving": "🚗", "walking": "🚶", "bicycling": "🚴", "transit": "🚌"}.get(result.get("mode", "driving"), "🚗")
+                    text = (
+                        f"{mode_emoji} *Ruta a {result['destination']}*\n"
+                        f"📍 Desde: {result['origin']}\n"
+                        f"🛣️ Distancia: {result['distance']}\n"
+                        f"⏱️ Sin tráfico: {result['duration_no_traffic']}\n"
+                        f"🚦 Con tráfico: {result['duration_with_traffic']}\n"
+                        f"[Abrir en Google Maps]({result['directions_url']})"
+                    )
+                    self.telegram_sender.send_message(chat_id=self.telegram_chat_id, text=text)
+                return result
             return {"status": "error", "message": "Google Maps not configured"}
 
         elif function_name == "get_traffic_info":
             if self.maps_manager:
-                return self.maps_manager.get_traffic_info(
+                result = self.maps_manager.get_traffic_info(
                     destination=function_args.get("destination"),
                     origin=function_args.get("origin")
                 )
+                if result.get("status") == "success" and self.telegram_sender and self.telegram_chat_id:
+                    traffic_emoji = {
+                        "fluido": "🟢", "moderado": "🟡",
+                        "con demoras": "🟠", "muy congestionado": "🔴"
+                    }.get(result.get("traffic_status", ""), "🚦")
+                    text = (
+                        f"{traffic_emoji} *Tráfico hacia {result['destination']}*\n"
+                        f"🛣️ Distancia: {result['distance']}\n"
+                        f"⏱️ Sin tráfico: {result['duration_no_traffic']}\n"
+                        f"🚦 Ahora: {result['duration_with_traffic']} ({result['traffic_status']})"
+                        + (f" (+{result['delay_minutes']} min)" if result.get('delay_minutes', 0) > 0 else "") +
+                        f"\n[Ver ruta]({result['directions_url']})"
+                    )
+                    self.telegram_sender.send_message(chat_id=self.telegram_chat_id, text=text)
+                return result
             return {"status": "error", "message": "Google Maps not configured"}
 
         elif function_name == "get_place_details":
             if self.maps_manager:
-                return self.maps_manager.get_place_details(
+                result = self.maps_manager.get_place_details(
                     place_name=function_args.get("place_name"),
                     location_hint=function_args.get("location_hint"),
                     send_telegram_link=function_args.get("send_telegram_link", True)
                 )
+                if result.get("status") == "success" and result.get("send_to_telegram", True) and self.telegram_sender and self.telegram_chat_id:
+                    open_str = "🟢 Abierto ahora" if result.get("open_now") else ("🔴 Cerrado ahora" if result.get("open_now") is False else "")
+                    text = (
+                        f"📍 *{result['name']}*\n"
+                        f"{result.get('address', '')}\n"
+                        + (f"⭐ {result['rating']}/5 ({result.get('total_ratings', '?')} reseñas)\n" if result.get('rating') else "")
+                        + (f"{open_str}\n" if open_str else "")
+                        + (f"📞 {result['phone']}\n" if result.get('phone') else "")
+                        + (f"🌐 {result['website']}\n" if result.get('website') else "")
+                        + (f"[Ver en Google Maps]({result['maps_url']})" if result.get('maps_url') else "")
+                    )
+                    self.telegram_sender.send_message(chat_id=self.telegram_chat_id, text=text)
+                return result
             return {"status": "error", "message": "Google Maps not configured"}
 
         elif function_name == "send_static_map":
