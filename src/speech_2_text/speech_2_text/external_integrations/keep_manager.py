@@ -6,6 +6,8 @@ una biblioteca no oficial que puede dejar de funcionar si Google cambia su siste
 import os
 from dotenv import load_dotenv, find_dotenv
 import gkeepapi
+import gpsoauth
+import uuid
 from typing import Optional, Dict, Any, List
 
 # Buscar .env subiendo directorios
@@ -126,17 +128,26 @@ class GoogleKeepManager:
         self._authenticate()
     
     def _authenticate(self):
-        """Autentica con Google Keep"""
+        """Autentica con Google Keep usando gpsoauth (master token)"""
         try:
-            self.keep.login(self.email, self.app_password)
+            android_id = uuid.uuid4().hex
+            master_response = gpsoauth.perform_master_login(
+                self.email, self.app_password, android_id
+            )
+            master_token = master_response.get('Token')
+            if not master_token:
+                error = master_response.get('Error', 'Unknown error')
+                raise Exception(f"No se pudo obtener master token: {error}")
+            self.keep.authenticate(self.email, master_token)
             self._authenticated = True
             print(f"[KeepManager] ✅ Autenticado exitosamente como {self.email}")
         except Exception as e:
             print(f"[KeepManager] ❌ Error al autenticar: {e}")
             print("Verifica que:")
             print("1. El email sea correcto")
-            print("2. Hayas generado una contraseña de aplicación (no tu contraseña normal)")
+            print("2. Hayas generado una contraseña de aplicación en: https://myaccount.google.com/apppasswords")
             print("3. La verificación en 2 pasos esté habilitada en tu cuenta")
+            print("4. La contraseña de aplicación NO tiene espacios (16 caracteres seguidos)")
             raise
     
     def _ensure_authenticated(self):

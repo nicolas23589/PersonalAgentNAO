@@ -286,50 +286,48 @@ class GeminiAgent:
 
         function_calls_executed = []
 
-        # Procesar function calls si existen
-        # Verificar todas las partes del response
-        if response.candidates and len(response.candidates) > 0 and response.candidates[0].content:
-            for part in response.candidates[0].content.parts:
-                if hasattr(part, 'function_call') and part.function_call:
-                    print(f"[DEBUG] Function call detectado: {part.function_call.name}")
-        
-        # Loop para procesar function calls múltiples
-        while (response.candidates and 
-               len(response.candidates) > 0 and
-               response.candidates[0].content and
-               response.candidates[0].content.parts and
-               len(response.candidates[0].content.parts) > 0 and
-               hasattr(response.candidates[0].content.parts[0], 'function_call') and
-               response.candidates[0].content.parts[0].function_call):
+        # Loop para procesar function calls (Gemini puede devolver múltiples a la vez)
+        while response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
+            # Recolectar TODOS los function calls de esta respuesta
+            pending_calls = [
+                part.function_call
+                for part in response.candidates[0].content.parts
+                if hasattr(part, 'function_call') and part.function_call and part.function_call.name
+            ]
 
-            function_call = response.candidates[0].content.parts[0].function_call
-            function_name = function_call.name
-            # Convertir MapComposite a dict
-            function_args = dict(function_call.args) if function_call.args else {}
+            if not pending_calls:
+                break
 
-            print(f"[GeminiAgent] Ejecutando función: {function_name}")
-            print(f"[GeminiAgent] Argumentos: {function_args}")
+            # Ejecutar todos y recolectar respuestas
+            function_response_parts = []
+            for function_call in pending_calls:
+                function_name = function_call.name
+                function_args = dict(function_call.args) if function_call.args else {}
 
-            # Ejecutar la función
-            function_result = self._execute_function(function_name, function_args)
-            function_calls_executed.append({
-                "name": function_name,
-                "args": function_args,
-                "result": function_result
-            })
+                print(f"[GeminiAgent] Ejecutando función: {function_name}")
+                print(f"[GeminiAgent] Argumentos: {function_args}")
 
-            print(f"[GeminiAgent] Resultado: {function_result.get('status', 'unknown')}")
-            if function_result.get('status') == 'error':
-                print(f"[GeminiAgent] ❌ Error: {function_result.get('message', 'Sin mensaje')}")
+                function_result = self._execute_function(function_name, function_args)
+                function_calls_executed.append({
+                    "name": function_name,
+                    "args": function_args,
+                    "result": function_result
+                })
 
-            # Devolver el resultado al modelo dentro del mismo chat usando Vertex AI format
-            print(f"[GeminiAgent] Reintentando con function result — función: {function_name}")
-            response = self.chat.send_message(
-                Part.from_function_response(
-                    name=function_name,
-                    response=function_result
+                print(f"[GeminiAgent] Resultado: {function_result.get('status', 'unknown')}")
+                if function_result.get('status') == 'error':
+                    print(f"[GeminiAgent] ❌ Error: {function_result.get('message', 'Sin mensaje')}")
+
+                function_response_parts.append(
+                    Part.from_function_response(
+                        name=function_name,
+                        response=function_result
+                    )
                 )
-            )
+
+            # Enviar TODAS las respuestas juntas en un solo mensaje
+            print(f"[GeminiAgent] Enviando {len(function_response_parts)} respuestas de función al modelo")
+            response = self.chat.send_message(function_response_parts)
         
         # Obtener respuesta final (verificar que existe)
         natural_response = ""
