@@ -19,6 +19,8 @@ from .search_manager import WebSearchManager, SEARCH_FUNCTIONS
 from .tasks_manager import GoogleTasksManager, TASKS_FUNCTIONS
 from .notion_manager import NotionManager, NOTION_FUNCTIONS
 from .maps_manager import MapsManager, MAPS_FUNCTIONS
+from .sheets_manager import GoogleSheetsManager, SHEETS_FUNCTIONS
+from .gmail_manager import GmailManager, GMAIL_FUNCTIONS
 
 # Buscar .env subiendo directorios, o usar ruta absoluta si está definida en DOTENV_PATH
 _env_file = os.getenv('DOTENV_PATH') or find_dotenv(filename='.env', raise_error_if_not_found=False, usecwd=False)
@@ -34,7 +36,7 @@ TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 vertexai.init(project=GCP_PROJECT_ID, location=GCP_LOCATION)
 
 # Arreglo de funciones (tools) para function calling
-AVAILABLE_TOOLS = TELEGRAM_FUNCTIONS + CALENDAR_FUNCTIONS + SEARCH_FUNCTIONS + TASKS_FUNCTIONS + NOTION_FUNCTIONS + MAPS_FUNCTIONS
+AVAILABLE_TOOLS = TELEGRAM_FUNCTIONS + CALENDAR_FUNCTIONS + SEARCH_FUNCTIONS + TASKS_FUNCTIONS + NOTION_FUNCTIONS + MAPS_FUNCTIONS + SHEETS_FUNCTIONS + GMAIL_FUNCTIONS
 
 SYSTEM_INSTRUCTION = (
     "Eres un asistente personal NAO, un robot humanoide. Tu respuesta será convertida a voz (text-to-speech), "
@@ -60,7 +62,17 @@ SYSTEM_INSTRUCTION = (
     "o quiera ver un lugar visualmente, usa las funciones de Google Maps. "
     "Para respuestas verbales resume el resultado (tiempo de viaje, nombre del lugar, estado del tráfico). "
     "Siempre envía por Telegram los mapas estáticos, Street Views, y links de rutas para que el usuario los abra. "
-    "Si la ubicación del usuario está disponible en el contexto, úsala como origen o referencia por defecto."
+    "Si la ubicación del usuario está disponible en el contexto, úsala como origen o referencia por defecto. "
+    "Cuando el usuario pregunte por datos en sus hojas de cálculo, presupuestos, registros, listas en Google Sheets, "
+    "o quiera crear/editar un documento de Sheets, usa las funciones de Google Sheets. "
+    "Para respuestas verbales resume brevemente lo que encontraste o lo que hiciste (p.ej. 'Encontré 3 filas con ese dato'). "
+    "Envía tablas completas o links del documento por Telegram para que el usuario los consulte. "
+    "Cuando el usuario quiera enviar un correo electrónico, redactar un email o contactar a alguien por correo, "
+    "usa send_email para enviarlo desde la cuenta del usuario. Redacta el cuerpo de forma natural y profesional. "
+    "Confirma verbalmente el envío de forma breve (p. ej. 'Listo, te envié el correo a Ana'). "
+    "Cuando el usuario pregunte por correos recibidos, busque información en sus emails, o quiera saber si llegó "
+    "algo de alguien o sobre un tema, usa search_emails o list_inbox según corresponda. "
+    "Resume los resultados verbalmente de forma concisa y envía el detalle completo por Telegram cuando haya mucho texto."
 )
 
 
@@ -137,6 +149,24 @@ class GeminiAgent:
             print(f"Advertencia: No se pudo inicializar Notion: {e}")
             print("La funcionalidad de Notion no estará disponible.")
             print("Para usar Notion, configura NOTION_TOKEN y NOTION_DATABASE_ID en .env")
+
+        # Inicializar Google Sheets Manager
+        self.sheets_manager = None
+        try:
+            self.sheets_manager = GoogleSheetsManager()
+        except Exception as e:
+            print(f"Advertencia: No se pudo inicializar Google Sheets: {e}")
+            print("La funcionalidad de Sheets no estará disponible.")
+            print("Para usar Sheets, habilita las APIs Google Sheets y Drive en Cloud Console.")
+
+        # Inicializar Gmail Manager
+        self.gmail_manager = None
+        try:
+            self.gmail_manager = GmailManager()
+        except Exception as e:
+            print(f"Advertencia: No se pudo inicializar Gmail: {e}")
+            print("La funcionalidad de Gmail no estará disponible.")
+            print("Para usar Gmail, habilita la Gmail API en Google Cloud Console (proyecto uniandes-452002).")
 
         # Inicializar Google Maps Manager
         self.maps_manager = None
@@ -403,6 +433,164 @@ class GeminiAgent:
                         )
                 return result
             return {"status": "error", "message": "Google Maps not configured"}
+
+        elif function_name == "list_spreadsheets":
+            if self.sheets_manager:
+                return self.sheets_manager.list_spreadsheets(
+                    max_results=function_args.get("max_results", 20)
+                )
+            return {"status": "error", "message": "Google Sheets not configured"}
+
+        elif function_name == "read_spreadsheet":
+            if self.sheets_manager:
+                return self.sheets_manager.read_spreadsheet(
+                    spreadsheet_name_or_id=function_args.get("spreadsheet_name_or_id"),
+                    sheet_name=function_args.get("sheet_name"),
+                    cell_range=function_args.get("cell_range"),
+                    max_rows=function_args.get("max_rows", 100),
+                )
+            return {"status": "error", "message": "Google Sheets not configured"}
+
+        elif function_name == "search_in_spreadsheets":
+            if self.sheets_manager:
+                return self.sheets_manager.search_in_spreadsheets(
+                    query=function_args.get("query"),
+                    spreadsheet_name_or_id=function_args.get("spreadsheet_name_or_id"),
+                    max_results=function_args.get("max_results", 20),
+                )
+            return {"status": "error", "message": "Google Sheets not configured"}
+
+        elif function_name == "write_to_spreadsheet":
+            if self.sheets_manager:
+                return self.sheets_manager.write_to_spreadsheet(
+                    spreadsheet_name_or_id=function_args.get("spreadsheet_name_or_id"),
+                    cell_range=function_args.get("cell_range"),
+                    values=function_args.get("values"),
+                    sheet_name=function_args.get("sheet_name"),
+                )
+            return {"status": "error", "message": "Google Sheets not configured"}
+
+        elif function_name == "append_rows_to_spreadsheet":
+            if self.sheets_manager:
+                return self.sheets_manager.append_rows(
+                    spreadsheet_name_or_id=function_args.get("spreadsheet_name_or_id"),
+                    rows=function_args.get("rows"),
+                    sheet_name=function_args.get("sheet_name"),
+                )
+            return {"status": "error", "message": "Google Sheets not configured"}
+
+        elif function_name == "create_spreadsheet":
+            if self.sheets_manager:
+                result = self.sheets_manager.create_spreadsheet(
+                    title=function_args.get("title"),
+                    sheet_name=function_args.get("sheet_name", "Hoja1"),
+                    headers=function_args.get("headers"),
+                )
+                if result.get("status") == "success" and self.telegram_sender and self.telegram_chat_id:
+                    self.telegram_sender.send_message(
+                        chat_id=self.telegram_chat_id,
+                        text=(
+                            f"📊 *Nuevo documento creado: {result['spreadsheet']}*\n"
+                            f"[Abrir en Google Sheets]({result['url']})"
+                        ),
+                    )
+                return result
+            return {"status": "error", "message": "Google Sheets not configured"}
+
+        elif function_name == "add_sheet_to_spreadsheet":
+            if self.sheets_manager:
+                return self.sheets_manager.add_sheet(
+                    spreadsheet_name_or_id=function_args.get("spreadsheet_name_or_id"),
+                    new_sheet_name=function_args.get("new_sheet_name"),
+                    headers=function_args.get("headers"),
+                )
+            return {"status": "error", "message": "Google Sheets not configured"}
+
+        elif function_name == "send_email":
+            if self.gmail_manager:
+                result = self.gmail_manager.send_email(
+                    to=function_args.get("to"),
+                    subject=function_args.get("subject"),
+                    body=function_args.get("body"),
+                    cc=function_args.get("cc"),
+                    reply_to_message_id=function_args.get("reply_to_message_id"),
+                )
+                return result
+            return {"status": "error", "message": "Gmail not configured"}
+
+        elif function_name == "search_emails":
+            if self.gmail_manager:
+                result = self.gmail_manager.search_emails(
+                    query=function_args.get("query"),
+                    max_results=function_args.get("max_results", 10),
+                    include_body=function_args.get("include_body", True),
+                )
+                # Si hay correos, enviar resumen detallado por Telegram
+                if (
+                    result.get("status") == "success"
+                    and result.get("count", 0) > 0
+                    and self.telegram_sender
+                    and self.telegram_chat_id
+                ):
+                    lines = [f"📧 *Correos encontrados ({result['count']}):*"]
+                    for i, em in enumerate(result["emails"], 1):
+                        lines.append(
+                            f"\n*{i}. {em.get('subject','(sin asunto)')}*\n"
+                            f"De: {em.get('from','')}\n"
+                            f"Fecha: {em.get('date','')}\n"
+                            + (f"_{em.get('body_excerpt','')[:300]}_" if em.get('body_excerpt') else "")
+                        )
+                    self.telegram_sender.send_message(
+                        chat_id=self.telegram_chat_id,
+                        text="\n".join(lines),
+                    )
+                return result
+            return {"status": "error", "message": "Gmail not configured"}
+
+        elif function_name == "get_email":
+            if self.gmail_manager:
+                result = self.gmail_manager.get_email(
+                    message_id=function_args.get("message_id"),
+                )
+                if result.get("status") == "success" and self.telegram_sender and self.telegram_chat_id:
+                    self.telegram_sender.send_message(
+                        chat_id=self.telegram_chat_id,
+                        text=(
+                            f"📧 *{result.get('subject','(sin asunto)')}*\n"
+                            f"De: {result.get('from','')}\n"
+                            f"Para: {result.get('to','')}\n"
+                            f"Fecha: {result.get('date','')}\n\n"
+                            f"{result.get('body','')[:2000]}"
+                        ),
+                    )
+                return result
+            return {"status": "error", "message": "Gmail not configured"}
+
+        elif function_name == "list_inbox":
+            if self.gmail_manager:
+                result = self.gmail_manager.list_inbox(
+                    max_results=function_args.get("max_results", 10),
+                    unread_only=function_args.get("unread_only", False),
+                )
+                if (
+                    result.get("status") == "success"
+                    and result.get("count", 0) > 0
+                    and self.telegram_sender
+                    and self.telegram_chat_id
+                ):
+                    lines = [f"📬 *Bandeja de entrada ({result['count']} correos):*"]
+                    for i, em in enumerate(result["emails"], 1):
+                        unread_mark = "🔵 " if em.get("unread") else ""
+                        lines.append(
+                            f"{unread_mark}*{i}. {em.get('subject','(sin asunto)')}*\n"
+                            f"De: {em.get('from','')} — {em.get('date','')}"
+                        )
+                    self.telegram_sender.send_message(
+                        chat_id=self.telegram_chat_id,
+                        text="\n\n".join(lines),
+                    )
+                return result
+            return {"status": "error", "message": "Gmail not configured"}
 
         else:
             return {"status": "error", "message": f"Unknown function: {function_name}"}
