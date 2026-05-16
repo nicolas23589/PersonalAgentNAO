@@ -1,15 +1,28 @@
 #!/usr/bin/env python3
 # -- coding: utf-8 --
 
-import os, json, time, base64, cv2, requests, re
+import os, json, time, base64, cv2, re
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 from naoqi_bridge_msgs.msg import HeadTouch
 from std_msgs.msg import String
 from cv_bridge import CvBridge
+from dotenv import load_dotenv, find_dotenv
+
+import vertexai
+from vertexai.generative_models import GenerativeModel, Part, Image as VertexImage
 
 from naoqi_utilities_msgs.msg import LedParameters
+
+# Cargar .env
+_env_file = os.getenv('DOTENV_PATH') or find_dotenv(filename='.env', raise_error_if_not_found=False, usecwd=False)
+if _env_file:
+    load_dotenv(dotenv_path=_env_file)
+
+GCP_PROJECT_ID = os.getenv('GCP_PROJECT_ID')
+GCP_LOCATION   = os.getenv('GCP_LOCATION', 'us-central1')
+vertexai.init(project=GCP_PROJECT_ID, location=GCP_LOCATION)
 
 ALLOWED = ["feliz", "triste", "enojado", "sorprendido", "neutral", "no visible"]
 
@@ -24,21 +37,20 @@ class EmotionClassifierNode(Node):
 
         # Parámetros
         self.declare_parameter('camera_topic', '/camera/front/image_raw')
-        self.declare_parameter('openai_model', 'gpt-4o')
+        self.declare_parameter('gemini_model', 'gemini-2.5-pro')
         self.declare_parameter('timeout_sec', 25.0)
-        self.declare_parameter('openai_api_key', os.getenv('OPENAI_API_KEY', ''))
 
         self.camera_topic = self.get_parameter('camera_topic').get_parameter_value().string_value
-        self.model        = self.get_parameter('openai_model').get_parameter_value().string_value
+        self.model_name   = self.get_parameter('gemini_model').get_parameter_value().string_value
         self.timeout_sec  = float(self.get_parameter('timeout_sec').value)
-        self.api_key = self.get_parameter('openai_api_key').get_parameter_value().string_value
 
+        self._gemini = GenerativeModel(self.model_name)
 
         self.bridge = CvBridge()
         self.last_frame_bgr = None
         self.frame1 = None
         self.frame2 = None
-        self.tap_count = 0 
+        self.tap_count = 0
 
         # ROS IO
         self.create_subscription(Image, self.camera_topic, self._on_image, 10)
@@ -47,7 +59,7 @@ class EmotionClassifierNode(Node):
         self.pub_state   = self.create_publisher(String, '/interaction/state', 10)
         self.pub_leds    = self.create_publisher(LedParameters, '/set_leds', 10)
 
-        self.get_logger().info(f"[emotion] listo | cam={self.camera_topic} | model={self.model}")
+        self.get_logger().info(f"[emotion] listo | cam={self.camera_topic} | model={self.model_name}")
 
     # Callbacks
     def _on_image(self, msg: Image):
@@ -66,16 +78,14 @@ class EmotionClassifierNode(Node):
         self.tap_count = 1 if self.tap_count >= 2 else self.tap_count + 1
 
         if self.tap_count == 1:
-            # TAP 1: iniciar captura
             self.frame1 = self.last_frame_bgr.copy()
             self.frame2 = None
             self._publish_state("RECORDING")
-            self._set_eyes_rgb(255, 255, 0, duration=0.8)  # Acá se activa el color amarillo
+            self._set_eyes_rgb(255, 255, 0, duration=0.8)
             self.get_logger().info("[emotion] TAP1 capturado (esperando TAP2 para clasificar)")
         elif self.tap_count == 2:
-            # TAP 2: clasificar
             self._publish_state("REC_DONE")
-            self._set_eyes_rgb(0, 255, 0, duration=0.8)  # Acá se activa el color verde
+            self._set_eyes_rgb(0, 255, 0, duration=0.8)
             self.frame2 = self.last_frame_bgr.copy()
             self.get_logger().info("[emotion] TAP2 capturado → clasificando…")
 
@@ -85,8 +95,6 @@ class EmotionClassifierNode(Node):
             self.pub_emotion.publish(String(data=out))
             self.get_logger().info(f"[emotion] publicado: {out}")
 
-            # reset para el siguiente par de taps
-            
             self.frame1 = None
             self.frame2 = None
             self.tap_count = 0
@@ -94,38 +102,29 @@ class EmotionClassifierNode(Node):
     def _classify(self, frame_bgr):
         if frame_bgr is None:
             return "no visible"
-        
-        if not (self.api_key or "").strip():
-            return "neutral"
         try:
-            data_url = self._bgr_to_data_url(frame_bgr)
-            url = "https://api.openai.com/v1/chat/completions"
-            headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
-            system_msg = ("Detecta una sola emoción facial en español, "
-                          "entre {feliz, triste, enojado, sorprendido, neutral, no visible}. "
-                          "Responde SOLO la palabra.")
-            user_content = [
-                {"type":"text","text":"Emoción principal:"},
-                {"type":"image_url","image_url":{"url":data_url}},
-            ]
-            payload = {
-                "model": self.model, "temperature": 0.0,
-                "messages": [{"role":"system","content":system_msg},{"role":"user","content":user_content}],
-                "max_tokens": 6
-            }
-            r = requests.post(url, headers=headers, json=payload, timeout=self.timeout_sec)
-            r.raise_for_status()
-            s = (r.json()["choices"][0]["message"]["content"] or "").strip().lower()
+            # Codificar frame como JPEG en memoria
+            ok, buf = cv2.imencode(".jpg", frame_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+            if not ok:
+                return "neutral"
+            image_bytes = buf.tobytes()
+
+            prompt = (
+                "Detecta una sola emoción facial en español, "
+                "entre: feliz, triste, enojado, sorprendido, neutral, no visible. "
+                "Responde SOLO la palabra, sin puntuación ni explicación."
+            )
+
+            response = self._gemini.generate_content([
+                Part.from_image(VertexImage.from_bytes(image_bytes)),
+                prompt
+            ])
+
+            s = (response.text or "").strip().lower()
             return self._normalize(s)
         except Exception as e:
             self.get_logger().warning(f"[emotion] fallo LLM: {e}")
             return "neutral"
-
-    def _bgr_to_data_url(self, frame_bgr) -> str:
-        ok, buf = cv2.imencode(".jpg", frame_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
-        if not ok: raise RuntimeError("jpeg fail")
-        b64 = base64.b64encode(buf.tobytes()).decode("ascii")
-        return f"data:image/jpeg;base64,{b64}"
 
     def _normalize(self, s):
         s = (s or "").strip().lower()
@@ -143,7 +142,7 @@ class EmotionClassifierNode(Node):
             if k in s: return k
         return "neutral"
 
-    def _cap(self, s): 
+    def _cap(self, s):
         return s.capitalize() if s else "Desconocida"
 
     def _publish_state(self, st: str):

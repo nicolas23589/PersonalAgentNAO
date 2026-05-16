@@ -16,7 +16,11 @@ class BehaviorNode(Node):
         super().__init__('behavior_node')
 
         # Suscripción al plan
+        # Suscripción al plan (flujo original OpenAI)
         self.create_subscription(String, '/llm/plan', self._on_plan, 10)
+
+        # Suscripción directa a respuesta de Gemini (flujo nuevo)
+        self.create_subscription(String, '/tts/say', self._on_tts_say, 10)
 
         self.create_subscription(String, '/interaction/state', self._on_state, 10)
 
@@ -79,6 +83,14 @@ class BehaviorNode(Node):
 
     def _on_state(self, msg: String):
         pass
+
+    def _on_tts_say(self, msg: String):
+        """Recibe la respuesta de GeminiAgent y la encola como acción 'say' simple."""
+        text = (msg.data or "").strip()
+        if not text:
+            return
+        self.get_logger().info(f"[TTS/say] Vocalizar: {text[:80]}{'...' if len(text) > 80 else ''}")
+        self.action_queue.put({"type": "say", "text": text})
 
     # Procesar aciones
     def _preprocess_actions(self, actions):
