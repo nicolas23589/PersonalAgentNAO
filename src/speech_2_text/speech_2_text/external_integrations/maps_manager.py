@@ -240,27 +240,6 @@ MAPS_FUNCTIONS = [
 # DETECCIÓN DE UBICACIÓN
 # ─────────────────────────────────────────────
 
-def _get_location_by_gps(timeout: int = 5) -> Optional[Tuple[float, float]]:
-    """
-    Intenta obtener coordenadas GPS via gpsd.
-    Requiere: sudo apt install gpsd gpsd-clients python3-gps
-    """
-    try:
-        import gps as gpsd_module  # python3-gps / gps3
-        session = gpsd_module.gps(mode=gpsd_module.WATCH_ENABLE | gpsd_module.WATCH_NEWSTYLE)
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            report = session.next()
-            if report['class'] == 'TPV':
-                lat = getattr(report, 'lat', None)
-                lon = getattr(report, 'lon', None)
-                if lat and lon and lat != 0 and lon != 0:
-                    print(f"[Location] 📡 GPS: {lat}, {lon}")
-                    return (lat, lon)
-    except Exception as e:
-        print(f"[Location] GPS no disponible: {e}")
-    return None
-
 
 def _get_location_by_wifi(api_key: str) -> Optional[Tuple[float, float]]:
     """
@@ -336,26 +315,20 @@ def _get_location_by_ip() -> Optional[Tuple[float, float]]:
 def get_device_location(api_key: str = None) -> Optional[Tuple[float, float]]:
     """
     Obtiene la ubicación del dispositivo usando múltiples métodos en orden de precisión:
-    1. GPS (más preciso, requiere hardware GPS o gpsd)
-    2. WiFi Geolocation (Google API, buena precisión en interiores)
-    3. IP Geolocation (fallback, precisión a nivel de ciudad)
+    1. WiFi Geolocation (Google API, buena precisión en interiores)
+    2. IP Geolocation (fallback, precisión a nivel de ciudad)
 
     Returns:
         Tupla (lat, lng) o None si todos los métodos fallan.
     """
-    # 1. GPS
-    loc = _get_location_by_gps(timeout=4)
-    if loc:
-        return loc
-
-    # 2. WiFi (necesita API key para Geolocation API)
+    # 1. WiFi (necesita API key para Geolocation API)
     key = api_key or GOOGLE_MAPS_API_KEY
     if key:
         loc = _get_location_by_wifi(key)
         if loc:
             return loc
 
-    # 3. IP fallback
+    # 2. IP fallback
     loc = _get_location_by_ip()
     return loc
 

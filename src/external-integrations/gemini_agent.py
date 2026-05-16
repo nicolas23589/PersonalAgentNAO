@@ -24,7 +24,7 @@ class GeminiAgent:
     """Agente de Gemini con function calling"""
     
     def __init__(self, telegram_chat_id: str = None, enable_calendar: bool = True):
-        self.model_name = 'gemini-3-flash-preview'
+        self.model_name = 'gemini-2.5-pro'
         self.tools = [types.Tool(function_declarations=AVAILABLE_TOOLS), types.Tool(
         google_search=types.GoogleSearch()
     )]
