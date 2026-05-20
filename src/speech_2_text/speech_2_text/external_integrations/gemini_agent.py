@@ -101,7 +101,11 @@ class GeminiAgent:
         
         self.use_native_search = use_native_search
         self.telegram_sender = TelegramSender(TELEGRAM_BOT_TOKEN) if TELEGRAM_BOT_TOKEN else None
-        self.telegram_chat_id = telegram_chat_id
+        self.telegram_chat_id = None  # chat_id fijo opcional; None = modo dinámico
+
+        # Iniciar polling para detectar dinámicamente el último chat activo
+        if self.telegram_sender:
+            self.telegram_sender.start_polling()
 
         # Crear modelo con system instruction
         self.model = GenerativeModel(
@@ -199,26 +203,30 @@ class GeminiAgent:
         """Ejecuta las funciones llamadas por el modelo"""
 
         if function_name == "send_telegram_link":
-            if self.telegram_sender and self.telegram_chat_id:
+            if self.telegram_sender and self._active_chat_id:
                 result = self.telegram_sender.send_link(
-                    chat_id=self.telegram_chat_id,
+                    chat_id=self._active_chat_id,
                     url=function_args.get("url"),
                     description=function_args.get("description", "")
                 )
                 return {"status": "success", "result": result}
             else:
-                return {"status": "error", "message": "Telegram not configured"}
+                if not self.telegram_sender:
+                    return {"status": "error", "message": "Telegram no configurado (falta TELEGRAM_BOT_TOKEN en .env)"}
+                return {"status": "error", "message": "Sin chat_id — escribe primero al bot de Telegram"}
 
         elif function_name == "send_telegram_text":
-            if self.telegram_sender and self.telegram_chat_id:
+            if self.telegram_sender and self._active_chat_id:
                 result = self.telegram_sender.send_message(
-                    chat_id=self.telegram_chat_id,
+                    chat_id=self._active_chat_id,
                     text=function_args.get("content"),
                     parse_mode=function_args.get("format", "Markdown")
                 )
                 return {"status": "success", "result": result}
             else:
-                return {"status": "error", "message": "Telegram not configured"}
+                if not self.telegram_sender:
+                    return {"status": "error", "message": "Telegram no configurado (falta TELEGRAM_BOT_TOKEN en .env)"}
+                return {"status": "error", "message": "Sin chat_id — escribe primero al bot de Telegram"}
 
         elif function_name == "create_calendar_event":
             if self.calendar_manager:
@@ -324,7 +332,7 @@ class GeminiAgent:
                     mode=function_args.get("mode", "driving"),
                     send_telegram_link=function_args.get("send_telegram_link", True)
                 )
-                if result.get("status") == "success" and result.get("send_to_telegram", True) and self.telegram_sender and self.telegram_chat_id:
+                if result.get("status") == "success" and result.get("send_to_telegram", True) and self.telegram_sender and self._active_chat_id:
                     mode_emoji = {"driving": "🚗", "walking": "🚶", "bicycling": "🚴", "transit": "🚌"}.get(result.get("mode", "driving"), "🚗")
                     text = (
                         f"{mode_emoji} *Ruta a {result['destination']}*\n"
@@ -334,7 +342,7 @@ class GeminiAgent:
                         f"🚦 Con tráfico: {result['duration_with_traffic']}\n"
                         f"[Abrir en Google Maps]({result['directions_url']})"
                     )
-                    self.telegram_sender.send_message(chat_id=self.telegram_chat_id, text=text)
+                    self.telegram_sender.send_message(chat_id=self._active_chat_id, text=text)
                 return result
             return {"status": "error", "message": "Google Maps not configured"}
 
@@ -344,7 +352,7 @@ class GeminiAgent:
                     destination=function_args.get("destination"),
                     origin=function_args.get("origin")
                 )
-                if result.get("status") == "success" and self.telegram_sender and self.telegram_chat_id:
+                if result.get("status") == "success" and self.telegram_sender and self._active_chat_id:
                     traffic_emoji = {
                         "fluido": "🟢", "moderado": "🟡",
                         "con demoras": "🟠", "muy congestionado": "🔴"
@@ -357,7 +365,7 @@ class GeminiAgent:
                         + (f" (+{result['delay_minutes']} min)" if result.get('delay_minutes', 0) > 0 else "") +
                         f"\n[Ver ruta]({result['directions_url']})"
                     )
-                    self.telegram_sender.send_message(chat_id=self.telegram_chat_id, text=text)
+                    self.telegram_sender.send_message(chat_id=self._active_chat_id, text=text)
                 return result
             return {"status": "error", "message": "Google Maps not configured"}
 
@@ -368,7 +376,7 @@ class GeminiAgent:
                     location_hint=function_args.get("location_hint"),
                     send_telegram_link=function_args.get("send_telegram_link", True)
                 )
-                if result.get("status") == "success" and result.get("send_to_telegram", True) and self.telegram_sender and self.telegram_chat_id:
+                if result.get("status") == "success" and result.get("send_to_telegram", True) and self.telegram_sender and self._active_chat_id:
                     open_str = "🟢 Abierto ahora" if result.get("open_now") else ("🔴 Cerrado ahora" if result.get("open_now") is False else "")
                     text = (
                         f"📍 *{result['name']}*\n"
@@ -379,7 +387,7 @@ class GeminiAgent:
                         + (f"🌐 {result['website']}\n" if result.get('website') else "")
                         + (f"[Ver en Google Maps]({result['maps_url']})" if result.get('maps_url') else "")
                     )
-                    self.telegram_sender.send_message(chat_id=self.telegram_chat_id, text=text)
+                    self.telegram_sender.send_message(chat_id=self._active_chat_id, text=text)
                 return result
             return {"status": "error", "message": "Google Maps not configured"}
 
@@ -393,17 +401,17 @@ class GeminiAgent:
                     caption=function_args.get("caption")
                 )
                 # Enviar imagen por Telegram si está configurado
-                if result["status"] == "success" and self.telegram_sender and self.telegram_chat_id:
+                if result["status"] == "success" and self.telegram_sender and self._active_chat_id:
                     try:
                         self.telegram_sender.send_photo_url(
-                            chat_id=self.telegram_chat_id,
+                            chat_id=self._active_chat_id,
                             photo_url=result["static_map_url"],
                             caption=result.get("caption", "")
                         )
                     except Exception as e:
                         # Fallback: enviar como link si no soporta foto directa
                         self.telegram_sender.send_message(
-                            chat_id=self.telegram_chat_id,
+                            chat_id=self._active_chat_id,
                             text=f"🗺️ *{result.get('caption', 'Mapa')}*\n{result['static_map_url']}"
                         )
                 return result
@@ -416,16 +424,16 @@ class GeminiAgent:
                     heading=function_args.get("heading"),
                     caption=function_args.get("caption")
                 )
-                if result["status"] == "success" and self.telegram_sender and self.telegram_chat_id:
+                if result["status"] == "success" and self.telegram_sender and self._active_chat_id:
                     try:
                         self.telegram_sender.send_photo_url(
-                            chat_id=self.telegram_chat_id,
+                            chat_id=self._active_chat_id,
                             photo_url=result["street_view_image_url"],
                             caption=result.get("caption", "")
                         )
                     except Exception as e:
                         self.telegram_sender.send_message(
-                            chat_id=self.telegram_chat_id,
+                            chat_id=self._active_chat_id,
                             text=(
                                 f"📸 *{result.get('caption', 'Street View')}*\n"
                                 f"[Ver en Street View]({result['street_view_explore_url']})"
@@ -486,9 +494,9 @@ class GeminiAgent:
                     sheet_name=function_args.get("sheet_name", "Hoja1"),
                     headers=function_args.get("headers"),
                 )
-                if result.get("status") == "success" and self.telegram_sender and self.telegram_chat_id:
+                if result.get("status") == "success" and self.telegram_sender and self._active_chat_id:
                     self.telegram_sender.send_message(
-                        chat_id=self.telegram_chat_id,
+                        chat_id=self._active_chat_id,
                         text=(
                             f"📊 *Nuevo documento creado: {result['spreadsheet']}*\n"
                             f"[Abrir en Google Sheets]({result['url']})"
@@ -530,7 +538,7 @@ class GeminiAgent:
                     result.get("status") == "success"
                     and result.get("count", 0) > 0
                     and self.telegram_sender
-                    and self.telegram_chat_id
+                    and self._active_chat_id
                 ):
                     lines = [f"📧 *Correos encontrados ({result['count']}):*"]
                     for i, em in enumerate(result["emails"], 1):
@@ -541,7 +549,7 @@ class GeminiAgent:
                             + (f"_{em.get('body_excerpt','')[:300]}_" if em.get('body_excerpt') else "")
                         )
                     self.telegram_sender.send_message(
-                        chat_id=self.telegram_chat_id,
+                        chat_id=self._active_chat_id,
                         text="\n".join(lines),
                     )
                 return result
@@ -552,9 +560,9 @@ class GeminiAgent:
                 result = self.gmail_manager.get_email(
                     message_id=function_args.get("message_id"),
                 )
-                if result.get("status") == "success" and self.telegram_sender and self.telegram_chat_id:
+                if result.get("status") == "success" and self.telegram_sender and self._active_chat_id:
                     self.telegram_sender.send_message(
-                        chat_id=self.telegram_chat_id,
+                        chat_id=self._active_chat_id,
                         text=(
                             f"📧 *{result.get('subject','(sin asunto)')}*\n"
                             f"De: {result.get('from','')}\n"
@@ -576,7 +584,7 @@ class GeminiAgent:
                     result.get("status") == "success"
                     and result.get("count", 0) > 0
                     and self.telegram_sender
-                    and self.telegram_chat_id
+                    and self._active_chat_id
                 ):
                     lines = [f"📬 *Bandeja de entrada ({result['count']} correos):*"]
                     for i, em in enumerate(result["emails"], 1):
@@ -586,7 +594,7 @@ class GeminiAgent:
                             f"De: {em.get('from','')} — {em.get('date','')}"
                         )
                     self.telegram_sender.send_message(
-                        chat_id=self.telegram_chat_id,
+                        chat_id=self._active_chat_id,
                         text="\n\n".join(lines),
                     )
                 return result
@@ -683,8 +691,21 @@ class GeminiAgent:
         }
 
     def set_telegram_chat_id(self, chat_id: str):
-        # TODO el chat debe dejar de ser fijo y pasar a ser una variable con reglas de negocio pre definidas
+        """Fija un chat_id específico. Pasa None para volver al modo dinámico (último que escribió)."""
         self.telegram_chat_id = chat_id
+
+    @property
+    def _active_chat_id(self) -> str:
+        """
+        Resuelve el chat_id a usar en cada envío:
+        - Si hay un chat_id fijo configurado, lo usa siempre.
+        - Si no, usa el último chat_id detectado por polling de Telegram.
+        """
+        if self.telegram_chat_id:
+            return self.telegram_chat_id
+        if self.telegram_sender:
+            return self.telegram_sender.last_chat_id
+        return None
 
 
 def main():

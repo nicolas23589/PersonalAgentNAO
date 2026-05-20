@@ -5,27 +5,18 @@ Permite definir un mensaje manualmente y ver la respuesta del agente.
 import sys
 import os
 
-# Agregar el path del módulo speech_2_text para poder importar
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src', 'speech_2_text'))
 
 from speech_2_text.external_integrations.gemini_agent import GeminiAgent
 
 
-# ==================== CONFIGURACIÓN ====================
-# Cambia este mensaje para probar diferentes consultas 
-# Ejemplos:
-#   - "Hola, ¿cómo estás?"
-#   - "Busca noticias sobre inteligencia artificial"
-#   - "¿Cuándo es el próximo eclipse solar en Estados Unidos?"
-#   - "Envíame un tutorial de Python por Telegram"
-MENSAJE_PRUEBA = "hola"
+MENSAJE_PRUEBA = "me puedes mandar un mensaje diciendo hola david al telegram?"
 
 # ID de chat de Telegram (opcional, si quieres probar funciones de Telegram)
-TELEGRAM_CHAT_ID = "1242472265"  # Puedes cambiarlo o dejarlo en None
+TELEGRAM_CHAT_ID = None  # Puedes cambiarlo o dejarlo en None
 
 # Habilitar/deshabilitar calendario
 ENABLE_CALENDAR = True
-# =======================================================
 
 
 def main():
