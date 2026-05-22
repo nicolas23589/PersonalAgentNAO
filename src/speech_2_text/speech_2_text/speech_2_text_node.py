@@ -5,8 +5,6 @@ from std_msgs.msg import String
 from naoqi_bridge_msgs.msg import AudioBuffer, HeadTouch
 import numpy as np
 import whisper
-import sys
-from pathlib import Path
 from .external_integrations.gemini_agent import GeminiAgent
 
 
@@ -20,19 +18,19 @@ class AudioTranscriber(Node):
         super().__init__('audio_transcriber')
         self.recording = False
         self.audio_buffer = bytearray()
-        self.last_emotion = "neutral"  # Emoción más reciente detectada por EmotionNode
+        self.last_emotion = "neutral"
 
         self.create_subscription(AudioBuffer, '/mic', self.on_audio, 10)
         self.create_subscription(HeadTouch, '/head_touch', self.on_touch, 10)
         self.create_subscription(String, '/emotion', self.on_emotion, 10)
 
         TELEGRAM_CHAT_ID = "1242472265"
-
-        # Crear agente
         self.gemini_agent = GeminiAgent(telegram_chat_id=TELEGRAM_CHAT_ID)
 
-        self.pub_text = self.create_publisher(String, '/asr/text', 10)
-        self.pub_tts  = self.create_publisher(String, '/tts/say', 10)  # Respuesta para el robot
+        # Solo publicamos en /tts/say (pipeline Gemini).
+        # NO publicamos en /asr/text para evitar que llm_bridge_node (pipeline viejo OpenAI)
+        # procese el mismo texto y genere una segunda respuesta.
+        self.pub_tts = self.create_publisher(String, '/tts/say', 10)
 
         self.model = whisper.load_model("base")
         self.get_logger().info("AudioTranscriber listo. Toca la cabeza para grabar/parar.")
@@ -54,12 +52,9 @@ class AudioTranscriber(Node):
             self.recording = False
             self.get_logger().info("🛑 Grabación finalizada. Transcribiendo...")
             if len(self.audio_buffer) == 0:
-                self.get_logger().warning("Buffer vacío; publicaré texto mínimo para no bloquear.")
-                self.pub_text.publish(String(data=""))
+                self.get_logger().warning("Buffer vacío; ignorando.")
                 return
-            text = self.transcribe(bytes(self.audio_buffer))
-            self.pub_text.publish(String(data=text))
-            self.get_logger().info(f"Texto transcrito: {text}")
+            self.transcribe(bytes(self.audio_buffer))
 
     def on_audio(self, msg: AudioBuffer):
         if self.recording:
@@ -73,7 +68,7 @@ class AudioTranscriber(Node):
             result = self.model.transcribe(float_audio, language="es")
 
             text = (result.get("text", "") or "").strip()
-
+            self.get_logger().info(f"Texto transcrito: {text}")
             self.get_logger().info("Enviando a Gemini Agent...")
 
             # Incluir la emoción detectada como contexto para Gemini
