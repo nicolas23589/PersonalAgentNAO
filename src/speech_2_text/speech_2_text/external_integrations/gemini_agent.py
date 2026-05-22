@@ -749,11 +749,13 @@ class GeminiAgent:
         natural_response = ""
         try:
             if response and response.candidates and response.candidates[0].content:
-                text_parts = [
-                    part.text
-                    for part in response.candidates[0].content.parts
-                    if hasattr(part, "text") and part.text
-                ]
+                text_parts = []
+                for part in response.candidates[0].content.parts:
+                    try:
+                        if hasattr(part, "text") and part.text:
+                            text_parts.append(part.text)
+                    except Exception:
+                        pass
                 natural_response = " ".join(text_parts).strip()
         except Exception as e:
             print(f"[GeminiAgent] Advertencia al extraer texto de parts: {e}")
