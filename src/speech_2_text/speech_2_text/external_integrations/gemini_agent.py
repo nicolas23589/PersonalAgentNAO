@@ -743,12 +743,34 @@ class GeminiAgent:
             print(f"[GeminiAgent] Enviando {len(function_response_parts)} respuestas de función al modelo")
             response = self.chat.send_message(function_response_parts)
         
-        # Obtener respuesta final (verificar que existe)
+        # Obtener respuesta final extrayendo texto de los parts directamente.
+        # No usar response.text directamente porque lanza ValueError si finish_reason != STOP
+        # o si la respuesta contiene partes no-texto (p.ej. tras function calls).
         natural_response = ""
-        if (response and response.candidates and len(response.candidates) > 0 and 
-            response.candidates[0].content and response.text):
-            natural_response = response.text
-        else:
+        try:
+            if response and response.candidates and response.candidates[0].content:
+                text_parts = [
+                    part.text
+                    for part in response.candidates[0].content.parts
+                    if hasattr(part, "text") and part.text
+                ]
+                natural_response = " ".join(text_parts).strip()
+        except Exception as e:
+            print(f"[GeminiAgent] Advertencia al extraer texto de parts: {e}")
+
+        # Fallback: intentar response.text si los parts no dieron texto
+        if not natural_response:
+            try:
+                natural_response = response.text.strip()
+            except Exception:
+                pass
+
+        if not natural_response:
+            try:
+                fr = response.candidates[0].finish_reason if response and response.candidates else "N/A"
+            except Exception:
+                fr = "N/A"
+            print(f"[GeminiAgent] Sin texto en la respuesta. finish_reason={fr}")
             natural_response = "Lo siento, no pude generar una respuesta."
 
         return {
