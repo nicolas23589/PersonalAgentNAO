@@ -55,6 +55,31 @@ SHEETS_SCOPES = [
 # ── Declaraciones de funciones para function calling ──────────────────────────
 SHEETS_FUNCTIONS = [
     {
+        "name": "find_spreadsheet",
+        "description": (
+            "Busca documentos de Google Sheets del usuario cuyo nombre contenga el texto indicado. "
+            "Úsala cuando el usuario mencione el nombre de una hoja de forma parcial o aproximada, "
+            "por ejemplo: 'la hoja de notas', 'el presupuesto del semestre', 'mi tabla de gastos'. "
+            "Devuelve nombre, ID y URL de los documentos encontrados. "
+            "Una vez obtenido el ID o nombre exacto, úsalo en read_spreadsheet, write_to_spreadsheet, etc."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Texto a buscar en el nombre del documento (no hace falta ser exacto).",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Número máximo de resultados a devolver (default: 5).",
+                    "default": 5,
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
         "name": "list_spreadsheets",
         "description": (
             "Lista todos los documentos de Google Sheets del usuario. "
@@ -318,18 +343,40 @@ class GoogleSheetsManager:
 
     # ── Helpers ───────────────────────────────────────────────────────────────
     def _open_spreadsheet(self, name_or_id: str) -> gspread.Spreadsheet:
-        """Abre un spreadsheet por nombre o por ID (intenta ID primero)."""
+        """Abre un spreadsheet por nombre exacto, ID o coincidencia parcial de nombre."""
+        # 1. Intentar por ID
         try:
             return self._gc.open_by_key(name_or_id)
         except Exception:
             pass
+        # 2. Intentar por nombre exacto
         try:
             return self._gc.open(name_or_id)
         except gspread.SpreadsheetNotFound:
-            raise ValueError(
-                f"No se encontró el documento '{name_or_id}'. "
-                "Verifica el nombre exacto o el ID."
+            pass
+        # 3. Búsqueda parcial/fuzzy en Drive
+        try:
+            safe = name_or_id.replace("'", "\'")
+            response = (
+                self._drive_service.files()
+                .list(
+                    q=f"mimeType='application/vnd.google-apps.spreadsheet' and trashed=false and name contains '{safe}'",
+                    pageSize=5,
+                    fields="files(id, name)",
+                    orderBy="modifiedTime desc",
+                )
+                .execute()
             )
+            files = response.get("files", [])
+            if files:
+                # Devolver el primer resultado (más recientemente modificado)
+                return self._gc.open_by_key(files[0]["id"])
+        except Exception:
+            pass
+        raise ValueError(
+            f"No se encontró ningún documento que coincida con '{name_or_id}'. "
+            "Verifica el nombre o usa find_spreadsheet para buscar."
+        )
 
     def _get_worksheet(
         self, spreadsheet: gspread.Spreadsheet, sheet_name: str | None
@@ -365,6 +412,39 @@ class GoogleSheetsManager:
             ]
             return {
                 "status": "success",
+                "count": len(sheets),
+                "spreadsheets": sheets,
+            }
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    def find_spreadsheet(self, query: str, max_results: int = 5) -> dict:
+        """Busca documentos de Google Sheets cuyo nombre contenga el texto indicado."""
+        try:
+            safe = query.replace("'", "\'")
+            response = (
+                self._drive_service.files()
+                .list(
+                    q=f"mimeType='application/vnd.google-apps.spreadsheet' and trashed=false and name contains '{safe}'",
+                    pageSize=max_results,
+                    fields="files(id, name, webViewLink, modifiedTime)",
+                    orderBy="modifiedTime desc",
+                )
+                .execute()
+            )
+            files = response.get("files", [])
+            sheets = [
+                {
+                    "name": f["name"],
+                    "id": f["id"],
+                    "url": f.get("webViewLink", f"https://docs.google.com/spreadsheets/d/{f['id']}"),
+                    "modified": f.get("modifiedTime", ""),
+                }
+                for f in files
+            ]
+            return {
+                "status": "success",
+                "query": query,
                 "count": len(sheets),
                 "spreadsheets": sheets,
             }

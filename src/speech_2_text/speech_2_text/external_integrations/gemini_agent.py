@@ -49,6 +49,10 @@ SYSTEM_INSTRUCTION = (
     "y conviértelas al formato correcto. Si falta información (como la hora), pregunta o sugiere "
     "valores razonables. Luego, en tu respuesta verbal, confirma la creación del evento de forma natural "
     "sin leer los detalles completos. "
+    "Cuando el usuario pregunte qué tiene agendado, qué hay esta semana, si tiene algo pendiente en el "
+    "calendario, o busque un evento específico, usa list_calendar_events o search_calendar_events según "
+    "corresponda. Resume verbalmente los eventos más relevantes (máximo 3-4) de forma natural y envía "
+    "la lista completa por Telegram cuando haya más de uno. "
     "Cuando el usuario pida información actualizada, noticias, datos que no conoces, o cualquier cosa "
     "que requiera búsqueda en internet, busca la información en la web. Resume los resultados de forma "
     "breve y natural para comunicar verbalmente, y envía los links completos por Telegram si es apropiado. "
@@ -65,6 +69,9 @@ SYSTEM_INSTRUCTION = (
     "Si la ubicación del usuario está disponible en el contexto, úsala como origen o referencia por defecto. "
     "Cuando el usuario pregunte por datos en sus hojas de cálculo, presupuestos, registros, listas en Google Sheets, "
     "o quiera crear/editar un documento de Sheets, usa las funciones de Google Sheets. "
+    "Si el usuario menciona el nombre de una hoja de forma parcial o aproximada (por ejemplo: 'la hoja de notas', "
+    "'el presupuesto del semestre', 'mis gastos'), usa find_spreadsheet primero para encontrar el documento exacto, "
+    "luego usa su nombre o ID en las demás funciones (read_spreadsheet, write_to_spreadsheet, etc.). "
     "Para respuestas verbales resume brevemente lo que encontraste o lo que hiciste (p.ej. 'Encontré 3 filas con ese dato'). "
     "Envía tablas completas o links del documento por Telegram para que el usuario los consulte. "
     "Cuando el usuario quiera enviar un correo electrónico, redactar un email o contactar a alguien por correo, "
@@ -229,6 +236,57 @@ class GeminiAgent:
                     description=function_args.get("description"),
                     location=function_args.get("location")
                 )
+                return result
+            else:
+                return {"status": "error", "message": "Google Calendar not configured"}
+
+        elif function_name == "list_calendar_events":
+            if self.calendar_manager:
+                result = self.calendar_manager.list_events(
+                    time_min=function_args.get("time_min"),
+                    time_max=function_args.get("time_max"),
+                    max_results=function_args.get("max_results", 10),
+                )
+                if result.get("status") == "success" and result.get("count", 0) > 0 and self.telegram_sender and self.telegram_chat_id:
+                    lines = [f"📅 *Eventos en tu calendario ({result['count']}):*"]
+                    for ev in result["events"]:
+                        lines.append(
+                            f"\n• *{ev['summary']}*\n"
+                            f"  🕒 {ev['start']}"
+                            + (f" → {ev['end']}" if ev.get('end') else "")
+                            + (f"\n  📍 {ev['location']}" if ev.get('location') else "")
+                            + (f"\n  [Ver evento]({ev['event_link']})" if ev.get('event_link') else "")
+                        )
+                    self.telegram_sender.send_message(
+                        chat_id=self.telegram_chat_id,
+                        text="\n".join(lines),
+                    )
+                return result
+            else:
+                return {"status": "error", "message": "Google Calendar not configured"}
+
+        elif function_name == "search_calendar_events":
+            if self.calendar_manager:
+                result = self.calendar_manager.search_events(
+                    query=function_args.get("query"),
+                    time_min=function_args.get("time_min"),
+                    time_max=function_args.get("time_max"),
+                    max_results=function_args.get("max_results", 10),
+                )
+                if result.get("status") == "success" and result.get("count", 0) > 0 and self.telegram_sender and self.telegram_chat_id:
+                    lines = [f"🔍 *Resultados para '{function_args.get('query')}' ({result['count']}):*"]
+                    for ev in result["events"]:
+                        lines.append(
+                            f"\n• *{ev['summary']}*\n"
+                            f"  🕒 {ev['start']}"
+                            + (f" → {ev['end']}" if ev.get('end') else "")
+                            + (f"\n  📍 {ev['location']}" if ev.get('location') else "")
+                            + (f"\n  [Ver evento]({ev['event_link']})" if ev.get('event_link') else "")
+                        )
+                    self.telegram_sender.send_message(
+                        chat_id=self.telegram_chat_id,
+                        text="\n".join(lines),
+                    )
                 return result
             else:
                 return {"status": "error", "message": "Google Calendar not configured"}
@@ -433,6 +491,23 @@ class GeminiAgent:
                         )
                 return result
             return {"status": "error", "message": "Google Maps not configured"}
+
+        elif function_name == "find_spreadsheet":
+            if self.sheets_manager:
+                result = self.sheets_manager.find_spreadsheet(
+                    query=function_args.get("query"),
+                    max_results=function_args.get("max_results", 5),
+                )
+                if result.get("status") == "success" and result.get("count", 0) > 0 and self.telegram_sender and self.telegram_chat_id:
+                    lines = [f"🔍 *Documentos encontrados para '{function_args.get('query')}' ({result['count']}):*"]
+                    for s in result["spreadsheets"]:
+                        lines.append(f"• *{s['name']}*\n  [Abrir]({s['url']})")
+                    self.telegram_sender.send_message(
+                        chat_id=self.telegram_chat_id,
+                        text="\n\n".join(lines),
+                    )
+                return result
+            return {"status": "error", "message": "Google Sheets not configured"}
 
         elif function_name == "list_spreadsheets":
             if self.sheets_manager:

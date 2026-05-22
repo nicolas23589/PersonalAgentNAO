@@ -12,3 +12,4 @@ Dependencias
 - Todas las apis de google habilitadas (incluyendo maps y su api key)
 - Credenciales y permisos en cuenta de notion
 - Bot de telegram y su token
+- Serper API Key para busqueda web

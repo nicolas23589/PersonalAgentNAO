@@ -130,6 +130,103 @@ class GoogleCalendarManager:
                 "message": str(e)
             }
     
+    def list_events(self, time_min: str = None, time_max: str = None,
+                     max_results: int = 10, timezone: str = 'America/Bogota'):
+        """Lista los próximos eventos del calendario
+
+        Args:
+            time_min: Fecha/hora mínima (ISO o formato legible). Por defecto, ahora.
+            time_max: Fecha/hora máxima (ISO o formato legible). Opcional.
+            max_results: Número máximo de eventos a devolver.
+            timezone: Zona horaria.
+        """
+        try:
+            tz = pytz.timezone(timezone)
+            now = datetime.now(tz)
+
+            time_min_dt = self._parse_datetime(time_min, timezone) if time_min else now
+            time_max_dt = self._parse_datetime(time_max, timezone) if time_max else None
+
+            params = {
+                'calendarId': self.calendar_id,
+                'timeMin': time_min_dt.isoformat(),
+                'maxResults': max_results,
+                'singleEvents': True,
+                'orderBy': 'startTime',
+            }
+            if time_max_dt:
+                params['timeMax'] = time_max_dt.isoformat()
+
+            events_result = self.service.events().list(**params).execute()
+            items = events_result.get('items', [])
+
+            events = []
+            for item in items:
+                start = item['start'].get('dateTime', item['start'].get('date', ''))
+                end = item['end'].get('dateTime', item['end'].get('date', ''))
+                events.append({
+                    'event_id': item.get('id'),
+                    'summary': item.get('summary', '(Sin título)'),
+                    'start': start,
+                    'end': end,
+                    'description': item.get('description', ''),
+                    'location': item.get('location', ''),
+                    'event_link': item.get('htmlLink', ''),
+                })
+
+            return {'status': 'success', 'count': len(events), 'events': events}
+
+        except Exception as e:
+            return {'status': 'error', 'message': str(e)}
+
+    def search_events(self, query: str, time_min: str = None, time_max: str = None,
+                      max_results: int = 10, timezone: str = 'America/Bogota'):
+        """Busca eventos en el calendario por texto
+
+        Args:
+            query: Texto a buscar en título, descripción o ubicación.
+            time_min: Fecha/hora mínima. Por defecto, hace 30 días.
+            time_max: Fecha/hora máxima. Por defecto, en 1 año.
+            max_results: Número máximo de eventos.
+            timezone: Zona horaria.
+        """
+        try:
+            tz = pytz.timezone(timezone)
+            now = datetime.now(tz)
+
+            time_min_dt = self._parse_datetime(time_min, timezone) if time_min else (now - timedelta(days=30))
+            time_max_dt = self._parse_datetime(time_max, timezone) if time_max else (now + timedelta(days=365))
+
+            events_result = self.service.events().list(
+                calendarId=self.calendar_id,
+                q=query,
+                timeMin=time_min_dt.isoformat(),
+                timeMax=time_max_dt.isoformat(),
+                maxResults=max_results,
+                singleEvents=True,
+                orderBy='startTime',
+            ).execute()
+            items = events_result.get('items', [])
+
+            events = []
+            for item in items:
+                start = item['start'].get('dateTime', item['start'].get('date', ''))
+                end = item['end'].get('dateTime', item['end'].get('date', ''))
+                events.append({
+                    'event_id': item.get('id'),
+                    'summary': item.get('summary', '(Sin título)'),
+                    'start': start,
+                    'end': end,
+                    'description': item.get('description', ''),
+                    'location': item.get('location', ''),
+                    'event_link': item.get('htmlLink', ''),
+                })
+
+            return {'status': 'success', 'count': len(events), 'events': events}
+
+        except Exception as e:
+            return {'status': 'error', 'message': str(e)}
+
     def _parse_datetime(self, datetime_str: str, timezone: str):
         """Parsea una cadena de fecha/hora a objeto datetime"""
         tz = pytz.timezone(timezone)
@@ -195,7 +292,62 @@ create_calendar_event_function = {
     }
 }
 
+list_calendar_events_function = {
+    "name": "list_calendar_events",
+    "description": "Lista los próximos eventos del calendario del usuario. Útil para responder preguntas como "
+                   "'¿qué tengo esta semana?', '¿qué hay mañana?', 'muéstrame mis eventos del mes'.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "time_min": {
+                "type": "string",
+                "description": "Fecha/hora de inicio del rango a consultar (ISO o formato legible). Por defecto, ahora."
+            },
+            "time_max": {
+                "type": "string",
+                "description": "Fecha/hora de fin del rango a consultar (ISO o formato legible). Opcional."
+            },
+            "max_results": {
+                "type": "integer",
+                "description": "Número máximo de eventos a devolver (por defecto 10)."
+            }
+        },
+        "required": []
+    }
+}
+
+search_calendar_events_function = {
+    "name": "search_calendar_events",
+    "description": "Busca eventos en el calendario del usuario por texto. Útil para preguntas como "
+                   "'¿cuándo es mi reunión con Ana?', '¿tengo algo relacionado con el dentista?', "
+                   "'busca el evento de cumpleaños'.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "Texto a buscar en título, descripción o ubicación de los eventos."
+            },
+            "time_min": {
+                "type": "string",
+                "description": "Fecha/hora de inicio del rango de búsqueda. Por defecto, hace 30 días."
+            },
+            "time_max": {
+                "type": "string",
+                "description": "Fecha/hora de fin del rango de búsqueda. Por defecto, en 1 año."
+            },
+            "max_results": {
+                "type": "integer",
+                "description": "Número máximo de resultados a devolver (por defecto 10)."
+            }
+        },
+        "required": ["query"]
+    }
+}
+
 # Exportar funciones disponibles para Calendar
 CALENDAR_FUNCTIONS = [
-    create_calendar_event_function
+    create_calendar_event_function,
+    list_calendar_events_function,
+    search_calendar_events_function,
 ]
