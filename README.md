@@ -49,14 +49,6 @@ Las credenciales se gestionan mediante **Application Default Credentials (ADC)**
 
 ### Configuración Rápida
 
-**Opción 1: Script Automático (Recomendado para Windows)**
-```powershell
-# Ejecuta el script de configuración
-.\setup_vertex_ai.ps1
-```
-
-**Opción 2: Manual**
-
 1. Copia el archivo de ejemplo:
    ```bash
    cp .env.example .env
@@ -73,10 +65,6 @@ Las credenciales se gestionan mediante **Application Default Credentials (ADC)**
    gcloud auth application-default login
    ```
 
-4. Verifica la configuración:
-   ```bash
-   python test_vertex_setup.py
-   ```
 
 📖 **Para instrucciones detalladas:** consulta [VERTEX_AI_SETUP.md](VERTEX_AI_SETUP.md)
 
@@ -155,7 +143,8 @@ Los resultados mostraron alta aceptación en claridad, comprensión de intenció
 ## Autor
 
 Proyecto desarrollado por:  
-**Juan Pablo Peña Jaime**  
+**Juan Pablo Peña Jaime**  (Emociones)
+**Nicolas Migul Murillo Cristancho**  (Integraciones con tool-calling)
 
 ### Equipo de Apoyo
 
